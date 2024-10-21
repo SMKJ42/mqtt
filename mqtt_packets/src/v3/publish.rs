@@ -63,18 +63,27 @@ pub struct PublishPacket {
 }
 
 impl PublishPacket {
-    pub fn new(
-        packet_id: Option<u16>,
-        topic_name: String,
-        flags: PublishFixedHeaderFlags,
-        payload: Bytes,
-    ) -> Self {
+    pub fn new(topic_name: String, payload: Bytes) -> Self {
         return Self {
-            packet_id,
+            packet_id: None,
             topic_name,
-            flags,
+            flags: PublishFixedHeaderFlags::zero(),
             payload,
         };
+    }
+
+    pub fn with_qos_0(&mut self) {
+        self.flags.set_qos(QosLevel::AtMostOnce);
+    }
+
+    pub fn with_qos_1(&mut self, packet_id: u16) {
+        self.flags.set_qos(QosLevel::AtLeastOnce);
+        self.packet_id = Some(packet_id);
+    }
+
+    pub fn with_qos_2(&mut self, packet_id: u16) {
+        self.flags.set_qos(QosLevel::ExactlyOnce);
+        self.packet_id = Some(packet_id);
     }
 
     pub fn decode(f_header: FixedHeader, bytes: Bytes) -> Result<Self, PacketError> {
@@ -100,7 +109,10 @@ impl PublishPacket {
         // add size for topic length.
         let mut len = 2 + self.topic_name.len();
         // add 2 for packet id
-        len += 2;
+
+        if self.packet_id.is_some() {
+            len += 2;
+        }
 
         len += self.payload.len();
 
@@ -119,6 +131,26 @@ impl PublishPacket {
         bytes.put_slice(&self.payload);
 
         return Ok(bytes.into());
+    }
+
+    pub fn qos(&self) -> QosLevel {
+        return self.flags.qos();
+    }
+
+    pub fn retain(&self) -> bool {
+        return self.flags.retain();
+    }
+
+    pub fn set_retain(&mut self, val: bool) {
+        self.flags.set_retain(val);
+    }
+
+    pub fn dup(&self) -> bool {
+        return self.flags.dup();
+    }
+
+    pub fn set_dup(&mut self, val: bool) {
+        self.flags.set_dup(val);
     }
 }
 
@@ -186,17 +218,17 @@ pub struct PublishFixedHeaderFlags {
 }
 
 impl PublishFixedHeaderFlags {
-    pub fn from_byte(byte: u8) -> Self {
+    fn from_byte(byte: u8) -> Self {
         return Self {
             byte: byte & 0b0000_1111,
         };
     }
 
-    pub fn zero() -> Self {
+    fn zero() -> Self {
         return Self { byte: 0 };
     }
 
-    pub fn qos(&self) -> QosLevel {
+    fn qos(&self) -> QosLevel {
         match self.byte & (QOS_BITS) {
             QOS_1 => QosLevel::AtLeastOnce,
             QOS_2 => QosLevel::ExactlyOnce,
@@ -205,15 +237,15 @@ impl PublishFixedHeaderFlags {
     }
 
     // Helper to set the QoS field (2 bits)
-    pub fn set_qos(&mut self, val: QosLevel) {
+    fn set_qos(&mut self, val: QosLevel) {
         // Clear the current QoS bit
         self.byte = self.byte & !(QOS_BITS);
         // Get the QoS as numeric u8 value
         // Left shift the QoS to the proper placement and set the bits.
-        self.byte = self.byte & ((val as u8) << 1);
+        self.byte = self.byte | ((val as u8) << 1);
     }
 
-    pub fn retain(&self) -> bool {
+    fn retain(&self) -> bool {
         if self.byte & RETAIN == RETAIN {
             return true;
         } else {
@@ -221,15 +253,15 @@ impl PublishFixedHeaderFlags {
         }
     }
 
-    pub fn set_retain(&mut self, val: bool) {
+    fn set_retain(&mut self, val: bool) {
         if val {
-            self.byte = self.byte & RETAIN;
+            self.byte = self.byte | RETAIN;
         } else {
             self.byte = self.byte & !RETAIN;
         }
     }
 
-    pub fn dup(&self) -> bool {
+    fn dup(&self) -> bool {
         if self.byte & DUP == DUP {
             return true;
         } else {
@@ -237,9 +269,9 @@ impl PublishFixedHeaderFlags {
         }
     }
 
-    pub fn set_dup(&mut self, val: bool) {
+    fn set_dup(&mut self, val: bool) {
         if val {
-            self.byte = self.byte & DUP;
+            self.byte = self.byte | DUP;
         } else {
             self.byte = self.byte & !DUP;
         }
@@ -250,19 +282,27 @@ impl PublishFixedHeaderFlags {
 mod test {
     use bytes::Bytes;
 
-    use crate::{publish::PublishFixedHeaderFlags, MqttPacket};
+    use crate::MqttPacket;
 
     use super::PublishPacket;
 
     #[test]
     // Panicing because the QoS is not handled for packets with a packet_id set -- needs more robust constructors / mutators.
     fn publish_serialize_deserialize() {
-        let packet = PublishPacket::new(
-            Some(1234),
-            String::from("test_topic"),
-            PublishFixedHeaderFlags::zero(),
-            Bytes::from_iter([117]),
-        );
+        let mut packet = PublishPacket::new(String::from("test_topic"), Bytes::from_iter([117]));
+
+        let packet_en = packet
+            .encode()
+            .expect(format!("Could not encode packet: {:?}", packet).as_str());
+
+        let packet_de = MqttPacket::decode(packet_en.clone())
+            .expect(format!("Could not decode packet: {:?}", packet_en).as_str());
+        assert_eq!(MqttPacket::Publish(packet), packet_de);
+
+        let mut packet = PublishPacket::new(String::from("test_topic"), Bytes::from_iter([117]));
+        packet.with_qos_1(1234);
+
+        println!("{:?}", packet.qos());
 
         let packet_en = packet
             .encode()

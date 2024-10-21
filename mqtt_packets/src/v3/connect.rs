@@ -511,7 +511,7 @@ impl ConnectFlags {
         // Clear the current QoS bit
         self.byte = self.byte & !(WILL_QOS_BITS);
         // Left shift the QoS to the proper placement and set the bits.
-        self.byte = self.byte & ((value as u8) << 3);
+        self.byte = self.byte | ((value as u8) << 3);
     }
 
     pub fn user_name(&self) -> bool {
@@ -524,7 +524,7 @@ impl ConnectFlags {
 
     pub fn set_user_name(&mut self, val: bool) {
         if val {
-            self.byte = self.byte & USERNAME;
+            self.byte = self.byte | USERNAME;
         } else {
             self.byte = self.byte & !USERNAME;
         }
@@ -540,7 +540,7 @@ impl ConnectFlags {
 
     pub fn set_password(&mut self, val: bool) {
         if val {
-            self.byte = self.byte & PASSWORD;
+            self.byte = self.byte | PASSWORD;
         } else {
             self.byte = self.byte & !PASSWORD;
         }
@@ -556,7 +556,7 @@ impl ConnectFlags {
 
     pub fn set_will_retain(&mut self, val: bool) {
         if val {
-            self.byte = self.byte & WILL_RETAIN;
+            self.byte = self.byte | WILL_RETAIN;
         } else {
             self.byte = self.byte & !WILL_RETAIN;
         }
@@ -572,7 +572,7 @@ impl ConnectFlags {
 
     pub fn set_will(&mut self, val: bool) {
         if val {
-            self.byte = self.byte & WILL;
+            self.byte = self.byte | WILL;
         } else {
             self.byte = self.byte & !WILL;
         }
@@ -588,7 +588,7 @@ impl ConnectFlags {
 
     pub fn set_clean_session(&mut self, val: bool) {
         if val {
-            self.byte = self.byte & CLEAN_SESSION;
+            self.byte = self.byte | CLEAN_SESSION;
         } else {
             self.byte = self.byte & !CLEAN_SESSION;
         }
