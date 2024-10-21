@@ -33,6 +33,7 @@ pub enum PacketErrorKind {
     Utf8ParseError,
     MalformedLength,
     MalformedTopicFilter,
+    MalformedTopicName,
     UsernamePassword,
     InvalidReturnCode,
 }

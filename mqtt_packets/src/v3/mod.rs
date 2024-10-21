@@ -113,6 +113,108 @@ impl TopicFilter {
     }
 }
 
+#[derive(PartialEq, PartialOrd, Eq, Ord, Clone, Debug)]
+pub struct TopicName(Vec<TopicToken>);
+
+impl TopicName {
+    pub fn decode(bytes: Bytes) -> Result<(Self, Bytes), PacketError> {
+        let (string, bytes) = decode_utf8(bytes)?;
+        let tokens = Self::from_str(string.as_str())?;
+        return Ok((tokens, bytes));
+    }
+
+    pub fn from_str(str: &'_ str) -> Result<Self, PacketError> {
+        let mut tokens = Vec::new();
+        let mut strs = str.split('/').peekable();
+
+        loop {
+            if let Some(str) = strs.peek() {
+                let token = TopicToken::from_str(*str);
+                match token {
+                    TopicToken::String(_) => {}
+                    _ => {
+                        return Err(PacketError::new(
+                            PacketErrorKind::MalformedTopicName,
+                            format!("Invalid topic path: {str}, item: {str} is not allowed"),
+                        ))
+                    }
+                }
+
+                tokens.push(token);
+
+                // consume the str to advance the iterator.
+                strs.next();
+            } else {
+                break;
+            }
+        }
+        if let Some(token) = tokens.iter().last() {
+            if token == &TopicToken::MultiLevel {
+                if strs.peek().is_some() {
+                    return Err(PacketError::new(
+                        PacketErrorKind::MalformedTopicFilter,
+                        format!(
+                            "The multi-level wildcard '#' must be at the end of a topic filter. {}",
+                            &str
+                        ),
+                    ));
+                }
+            }
+        }
+
+        return Ok(Self(tokens));
+    }
+
+    pub fn to_string(self) -> String {
+        let mut string = String::new();
+        for token in self.into_iter() {
+            string += token.as_str();
+            string.push('/');
+        }
+        string.pop();
+        return string;
+    }
+
+    //TODO: this is really inefficient...
+    pub fn len(&self) -> usize {
+        let mut len = 0;
+        for token in &self.0 {
+            match token {
+                TopicToken::String(string) => len += string.len() + 1,
+                _ => len += 2,
+            }
+        }
+
+        return len - 1;
+    }
+}
+
+impl IntoIterator for TopicName {
+    type Item = TopicToken;
+    type IntoIter = std::vec::IntoIter<TopicToken>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+impl PartialEq<TopicFilter> for TopicName {
+    fn eq(&self, other: &TopicFilter) -> bool {
+        let iters = self.0.iter().zip(other.0.iter());
+        for (self_token, filter_token) in iters {
+            // filter does not match topic name
+            if self_token != filter_token {
+                return false;
+            }
+            // handle cases that end in #
+            if *filter_token == TopicToken::MultiLevel {
+                return true;
+            }
+        }
+        // handle exact matches or cases that dont end in #
+        return true;
+    }
+}
+
 impl IntoIterator for TopicFilter {
     type Item = TopicToken;
     type IntoIter = std::vec::IntoIter<TopicToken>;

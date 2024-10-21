@@ -7,7 +7,7 @@ use crate::{
     FixedHeader, PacketError, PacketType,
 };
 
-use super::QosLevel;
+use super::{QosLevel, TopicName};
 
 /*
  * A PUBLISH Control Packet is sent from a Client to a Server
@@ -49,7 +49,7 @@ pub struct PublishPacket {
      * Subscription’s Topic Filter according to the matching process defined in Section 4.7  [MQTT-3.3.2-3]. However, since the Server is permitted to override the Topic Name, it might not be the same as the Topic Name in the original PUBLISH Packet.
      */
     // TODO: change from string type to a TopicName struct that has matching for TopicFilters (PartialEq, Eq traits)
-    topic_name: String,
+    topic_name: TopicName,
     /*
      * The Packet Identifier field is only present in PUBLISH Packets where the QoS level is 1 or 2.
      *  Section 2.3.1 provides more information about Packet Identifiers.
@@ -63,7 +63,7 @@ pub struct PublishPacket {
 }
 
 impl PublishPacket {
-    pub fn new(topic_name: String, payload: Bytes) -> Self {
+    pub fn new(topic_name: TopicName, payload: Bytes) -> Self {
         return Self {
             packet_id: None,
             topic_name,
@@ -87,7 +87,8 @@ impl PublishPacket {
     }
 
     pub fn decode(f_header: FixedHeader, bytes: Bytes) -> Result<Self, PacketError> {
-        let (topic_name, mut bytes) = decode_utf8(bytes)?;
+        let (topic_name_in, mut bytes) = decode_utf8(bytes)?;
+        let topic_name = TopicName::from_str(&topic_name_in)?;
 
         let flags = PublishFixedHeaderFlags::from_byte(f_header.flags.as_byte());
 
@@ -122,7 +123,7 @@ impl PublishPacket {
 
         encode_packet_length(&mut bytes, len)?;
 
-        encode_utf8(&mut bytes, &self.topic_name)?;
+        encode_utf8(&mut bytes, &self.topic_name.clone().to_string())?;
 
         if let Some(packet_id) = self.packet_id {
             bytes.put_u16(packet_id);
@@ -282,14 +283,17 @@ impl PublishFixedHeaderFlags {
 mod test {
     use bytes::Bytes;
 
-    use crate::MqttPacket;
+    use crate::{MqttPacket, TopicName};
 
     use super::PublishPacket;
 
     #[test]
     // Panicing because the QoS is not handled for packets with a packet_id set -- needs more robust constructors / mutators.
     fn publish_serialize_deserialize() {
-        let mut packet = PublishPacket::new(String::from("test_topic"), Bytes::from_iter([117]));
+        let packet = PublishPacket::new(
+            TopicName::from_str("this/is/a/test").expect("Could not create topic name"),
+            Bytes::from_iter([117]),
+        );
 
         let packet_en = packet
             .encode()
@@ -299,7 +303,10 @@ mod test {
             .expect(format!("Could not decode packet: {:?}", packet_en).as_str());
         assert_eq!(MqttPacket::Publish(packet), packet_de);
 
-        let mut packet = PublishPacket::new(String::from("test_topic"), Bytes::from_iter([117]));
+        let mut packet = PublishPacket::new(
+            TopicName::from_str("this/is/a/test").expect("Could not create topic name"),
+            Bytes::from_iter([117]),
+        );
         packet.with_qos_1(1234);
 
         println!("{:?}", packet.qos());
