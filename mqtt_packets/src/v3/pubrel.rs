@@ -2,6 +2,10 @@ use bytes::{Buf, BufMut, Bytes, BytesMut};
 
 use crate::{err::PacketError, FixedHeader, PacketType};
 
+/*
+ * A PUBREL Packet is the response to a PUBREC Packet.
+ * It is the third packet of the QoS 2 protocol exchange.
+ */
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug)]
 pub struct PubRelPacket {
     id: u16,

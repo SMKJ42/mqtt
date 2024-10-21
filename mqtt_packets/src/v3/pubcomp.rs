@@ -2,6 +2,10 @@ use bytes::{Buf, BufMut, Bytes, BytesMut};
 
 use crate::{err::PacketError, FixedHeader, PacketType};
 
+/*
+ * The PUBCOMP Packet is the response to a PUBREL Packet.
+ * It is the fourth and final packet of the QoS 2 protocol exchange.
+ */
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug)]
 pub struct PubCompPacket {
     id: u16,

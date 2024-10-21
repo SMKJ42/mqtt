@@ -48,16 +48,12 @@ pub struct PublishPacket {
      * The Topic Name in a PUBLISH Packet sent by a Server to a subscribing Client MUST match the
      * Subscription’s Topic Filter according to the matching process defined in Section 4.7  [MQTT-3.3.2-3]. However, since the Server is permitted to override the Topic Name, it might not be the same as the Topic Name in the original PUBLISH Packet.
      */
-    // TODO: change from string type to a TopicName struct that has matching for TopicFilters (PartialEq, Eq traits)
     topic_name: TopicName,
     /*
      * The Packet Identifier field is only present in PUBLISH Packets where the QoS level is 1 or 2.
      *  Section 2.3.1 provides more information about Packet Identifiers.
      */
     packet_id: Option<u16>,
-    // dup: bool,
-    // qos: QosLevel,
-    // retain: bool,
     flags: PublishFixedHeaderFlags,
     payload: Bytes,
 }
@@ -287,9 +283,9 @@ mod test {
 
     use super::PublishPacket;
 
+    // Generic Packet test
     #[test]
-    // Panicing because the QoS is not handled for packets with a packet_id set -- needs more robust constructors / mutators.
-    fn publish_serialize_deserialize() {
+    fn serialize_deserialize_generic() {
         let packet = PublishPacket::new(
             TopicName::from_str("this/is/a/test").expect("Could not create topic name"),
             Bytes::from_iter([117]),
@@ -302,14 +298,16 @@ mod test {
         let packet_de = MqttPacket::decode(packet_en.clone())
             .expect(format!("Could not decode packet: {:?}", packet_en).as_str());
         assert_eq!(MqttPacket::Publish(packet), packet_de);
+    }
 
+    // Test QoS encode and decode
+    #[test]
+    fn serialize_deserialize_qos() {
         let mut packet = PublishPacket::new(
             TopicName::from_str("this/is/a/test").expect("Could not create topic name"),
             Bytes::from_iter([117]),
         );
         packet.with_qos_1(1234);
-
-        println!("{:?}", packet.qos());
 
         let packet_en = packet
             .encode()

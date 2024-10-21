@@ -2,6 +2,10 @@ use bytes::{Buf, BufMut, Bytes, BytesMut};
 
 use crate::{err::PacketError, FixedHeader, PacketType};
 
+/*
+ * A PUBREC Packet is the response to a PUBLISH Packet with QoS 2.
+ * It is the second packet of the QoS 2 protocol exchange.
+ */
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug)]
 pub struct PubRecPacket {
     id: u16,

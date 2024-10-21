@@ -2,6 +2,10 @@ use bytes::{BufMut, Bytes, BytesMut};
 
 use crate::{err::PacketError, FixedHeader, PacketType};
 
+/*
+ * The DISCONNECT Packet is the final Control Packet sent from the Client to the Server.
+ * It indicates that the Client is disconnecting cleanly.
+ */
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug)]
 pub struct DisconnectPacket;
 

@@ -2,6 +2,9 @@ use bytes::{Buf, BufMut, Bytes, BytesMut};
 
 use crate::{err::PacketError, FixedHeader, PacketType};
 
+/*
+ * A PUBACK Packet is the response to a PUBLISH Packet with QoS level 1.
+ */
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug)]
 pub struct PubAckPacket {
     id: u16,

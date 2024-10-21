@@ -7,8 +7,9 @@ use crate::{
 
 use super::TopicFilter;
 
-// An UNSUBSCRIBE Packet is sent by the Client to the Server, to unsubscribe from topics.
-
+/*
+ * An UNSUBSCRIBE Packet is sent by the Client to the Server, to unsubscribe from topics.
+ */
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct UnsubscribePacket {
     packet_id: u16,

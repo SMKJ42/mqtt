@@ -2,6 +2,10 @@ use bytes::{BufMut, Bytes, BytesMut};
 
 use crate::{err::PacketError, FixedHeader, PacketType};
 
+/*
+ * A PINGRESP Packet is sent by the Server to the Client in response to a PINGREQ Packet. It indicates that the Server is alive.
+ * This Packet is used in Keep Alive processing, see Section 3.1.2.10 for more details.
+ */
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug)]
 pub struct PingRespPacket;
 

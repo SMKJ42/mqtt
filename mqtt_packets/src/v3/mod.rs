@@ -91,6 +91,7 @@ impl TopicFilter {
         return Ok(Self(tokens));
     }
 
+    //TODO: this is really inefficient...
     pub fn to_string(self) -> String {
         let mut string = String::new();
         for token in self.into_iter() {
@@ -165,6 +166,7 @@ impl TopicName {
         return Ok(Self(tokens));
     }
 
+    //TODO: this is really inefficient...
     pub fn to_string(self) -> String {
         let mut string = String::new();
         for token in self.into_iter() {
