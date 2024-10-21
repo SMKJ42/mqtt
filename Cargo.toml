@@ -1,0 +1,5 @@
+[workspace]
+members = [ "mqtt-client", "mqtt-broker", "mqtt-core" ]
+
+resolver = "2"
+
