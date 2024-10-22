@@ -1,6 +1,9 @@
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 
-use crate::{err::PacketError, FixedHeader, PacketType};
+use crate::{
+    err::PacketError,
+    v3::{FixedHeader, PacketType},
+};
 
 /*
  * A PUBACK Packet is the response to a PUBLISH Packet with QoS level 1.
@@ -43,7 +46,7 @@ impl PubAckPacket {
 
 #[cfg(test)]
 mod test {
-    use crate::MqttPacket;
+    use crate::v3::MqttPacket;
 
     use super::PubAckPacket;
 

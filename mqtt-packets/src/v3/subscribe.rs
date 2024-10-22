@@ -1,11 +1,12 @@
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 
 use crate::{
+    err::PacketError,
     io::{encode_packet_length, encode_utf8},
-    PacketError, PacketType,
+    v3::PacketType,
 };
 
-use super::{QosLevel, TopicFilter};
+use super::shared::{QosLevel, TopicFilter};
 
 /*
  * The SUBSCRIBE Packet is sent from the Client to the Server to create one or more Subscriptions.
@@ -95,7 +96,10 @@ impl SubscribePacket {
 
 #[cfg(test)]
 mod test {
-    use crate::{MqttPacket, QosLevel, TopicFilter};
+    use crate::v3::{
+        shared::{QosLevel, TopicFilter},
+        MqttPacket,
+    };
 
     use super::SubscribePacket;
 

@@ -1,11 +1,12 @@
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 
 use crate::{
+    err::PacketError,
     io::{encode_packet_length, encode_utf8},
-    PacketError, PacketType,
+    v3::PacketType,
 };
 
-use super::TopicFilter;
+use super::shared::TopicFilter;
 
 /*
  * An UNSUBSCRIBE Packet is sent by the Client to the Server, to unsubscribe from topics.
@@ -66,7 +67,7 @@ impl UnsubscribePacket {
 
 #[cfg(test)]
 mod test {
-    use crate::{MqttPacket, TopicFilter};
+    use crate::v3::{shared::TopicFilter, MqttPacket};
 
     use super::UnsubscribePacket;
 

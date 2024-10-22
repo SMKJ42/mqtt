@@ -1,6 +1,6 @@
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 
-use crate::{PacketError, PacketErrorKind, PacketType};
+use crate::v3::{PacketError, PacketErrorKind, PacketType};
 
 /*
  * The CONNACK Packet is the packet sent by the Server in response to a CONNECT Packet received from a Client.
@@ -126,7 +126,7 @@ impl TryFrom<u8> for ConnectReturnCode {
 
 #[cfg(test)]
 mod test {
-    use crate::MqttPacket;
+    use crate::v3::MqttPacket;
 
     use super::ConnAckPacket;
 

@@ -1,5 +1,3 @@
-use bytes::Bytes;
-
 pub mod conack;
 pub mod connect;
 pub mod disconnect;
@@ -10,242 +8,271 @@ pub mod pubcomp;
 pub mod publish;
 pub mod pubrec;
 pub mod pubrel;
+pub mod shared;
 pub mod suback;
 pub mod subscribe;
 pub mod unsuback;
 pub mod unsubscribe;
 
-use crate::{
-    err::{PacketError, PacketErrorKind},
-    io::decode_utf8,
-};
+use crate::io::decode_packet_length;
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug)]
-pub enum QosLevel {
-    AtMostOnce = 0,
-    AtLeastOnce = 1,
-    ExactlyOnce = 2,
+use super::err::{PacketError, PacketErrorKind};
+use bytes::{Buf, Bytes};
+use disconnect::DisconnectPacket;
+use pingreq::PingReqPacket;
+use pingresp::PingRespPacket;
+use puback::PubAckPacket;
+use pubcomp::PubCompPacket;
+use pubrec::PubRecPacket;
+use pubrel::PubRelPacket;
+use std::fmt::{Debug, Display};
+use subscribe::SubscribePacket;
+use unsuback::UnsubAckPacket;
+
+use conack::ConnAckPacket;
+use connect::ConnectPacket;
+use publish::PublishPacket;
+use suback::SubAckPacket;
+use unsubscribe::UnsubscribePacket;
+
+const PACKET_TYPE_BITS: u8 = 0b1111_0000;
+const PACKET_FLAG_BITS: u8 = 0b0000_1111;
+
+#[derive(PartialEq, Debug)]
+pub enum MqttPacket {
+    ConnAck(ConnAckPacket),
+    Connect(ConnectPacket),
+    Disconnect(DisconnectPacket),
+    PinReq(PingReqPacket),
+    PingResp(PingRespPacket),
+    PubAck(PubAckPacket),
+    PubComp(PubCompPacket),
+    Publish(PublishPacket),
+    PubRec(PubRecPacket),
+    PubRel(PubRelPacket),
+    SubAck(SubAckPacket),
+    Subscribe(SubscribePacket),
+    UnsubAck(UnsubAckPacket),
+    Unsubscribe(UnsubscribePacket),
 }
 
-impl TryFrom<u8> for QosLevel {
+impl MqttPacket {
+    pub fn decode(mut bytes: Bytes) -> Result<Self, PacketError> {
+        let f_header: FixedHeader;
+
+        (f_header, bytes) = FixedHeader::decode(bytes)?;
+
+        return match f_header.type_ {
+            PacketType::CONNACK => Ok(Self::ConnAck(ConnAckPacket::decode(bytes)?)),
+            PacketType::CONNECT => Ok(Self::Connect(ConnectPacket::decode(bytes)?)),
+            PacketType::DISCONNECT => Ok(Self::Disconnect(DisconnectPacket::decode(f_header)?)),
+            PacketType::PINGREQ => Ok(Self::PinReq(PingReqPacket::decode(f_header)?)),
+            PacketType::PINGRESP => Ok(Self::PingResp(PingRespPacket::decode(f_header)?)),
+            PacketType::PUBACK => Ok(Self::PubAck(PubAckPacket::decode(f_header, bytes)?)),
+            PacketType::PUBCOMP => Ok(Self::PubComp(PubCompPacket::decode(f_header, bytes)?)),
+            PacketType::PUBLISH => Ok(Self::Publish(PublishPacket::decode(f_header, bytes)?)),
+            PacketType::PUBREL => Ok(Self::PubRel(PubRelPacket::decode(f_header, bytes)?)),
+            PacketType::PUBREC => Ok(Self::PubRec(PubRecPacket::decode(f_header, bytes)?)),
+            PacketType::SUBACK => Ok(Self::SubAck(SubAckPacket::decode(bytes)?)),
+            PacketType::SUBSCRIBE => Ok(Self::Subscribe(SubscribePacket::decode(bytes)?)),
+            PacketType::UNSUBACK => Ok(Self::UnsubAck(UnsubAckPacket::decode(f_header, bytes)?)),
+            PacketType::UNSUBSCRIBE => Ok(Self::Unsubscribe(UnsubscribePacket::decode(bytes)?)),
+        };
+    }
+}
+
+#[derive(Copy, Clone)]
+pub struct FixedHeader {
+    pub type_: PacketType,
+    pub flags: HeaderFlags,
+    len: usize,
+}
+
+impl FixedHeader {
+    pub fn decode(mut bytes: Bytes) -> Result<(Self, Bytes), PacketError> {
+        let byte = bytes.get_u8();
+        let type_ = PacketType::try_from(byte)?;
+        let flags = HeaderFlags::try_from((type_, byte))?;
+
+        let (len, bytes) = decode_packet_length(bytes.clone())?;
+
+        if bytes.remaining() > len {
+            return Err(PacketError::new(
+                PacketErrorKind::MalformedLength,
+                format!(
+                    "Actual packet length: {} OVERFLOWED encoded packet length: {len} ",
+                    bytes.remaining()
+                ),
+            ));
+        } else if bytes.remaining() < len {
+            return Err(PacketError::new(
+                PacketErrorKind::MalformedLength,
+                format!(
+                    "Actual packet length: {} UNDERFLOWED encoded packet length: {len} ",
+                    bytes.remaining()
+                ),
+            ));
+        }
+
+        match type_ {
+            // Check for packets with fixed length of 2.
+            PacketType::CONNACK
+            | PacketType::PUBACK
+            | PacketType::PUBREC
+            | PacketType::PUBREL
+            | PacketType::PUBCOMP
+            | PacketType::UNSUBACK => {
+                if len != 2 {
+                    return Err(PacketError::new(
+                        PacketErrorKind::MalformedLength,
+                        format!("Packet length for packet type {type_} must be 2, instead reveived length: {len}"),
+                    ));
+                }
+            }
+            // Check for packets with fixed length of 0.
+            PacketType::PINGREQ | PacketType::PINGRESP | PacketType::DISCONNECT => {
+                if len != 0 {
+                    return Err(PacketError::new(
+                        PacketErrorKind::MalformedLength,
+                        format!("Packet length for packet type {type_} must be 0, instead received length: {len}"),
+                    ));
+                }
+            }
+            // Length for all other packets is variable.
+            _ => {}
+        }
+
+        return Ok((Self { type_, flags, len }, bytes));
+    }
+
+    pub fn set_flags(&mut self, flags: HeaderFlags) {
+        self.flags = flags;
+    }
+}
+
+impl Into<u8> for FixedHeader {
+    fn into(self) -> u8 {
+        let flags: u8 = self.flags.as_byte();
+        let type_: u8 = self.type_ as u8;
+        return flags & type_;
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
+pub struct HeaderFlags {
+    byte: u8,
+}
+
+impl HeaderFlags {
+    pub fn as_byte(&self) -> u8 {
+        return self.byte;
+    }
+}
+
+// https://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc398718022
+impl TryFrom<(PacketType, u8)> for HeaderFlags {
     type Error = PacketError;
-    /// Takes a byte with non-QoS bits masked, and QoS bits right-shifted to the right-hand side (idx 0)
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        // left shift 5, the right shift 6 to isolate the QoS bitflags
-        let out = match value {
-            0 => Self::AtMostOnce,
-            1 => Self::AtLeastOnce,
-            2 => Self::ExactlyOnce,
+    fn try_from((type_, byte): (PacketType, u8)) -> Result<Self, PacketError> {
+        // clean up the unused bits (most significant 4 bits)
+        match type_ {
+            PacketType::PUBLISH => {
+                // all bit values are available to be written to, and no error handling needs to be enforced on the parse.
+            }
+            PacketType::PUBREL | PacketType::SUBSCRIBE | PacketType::UNSUBSCRIBE => {
+                // these packet types all require the flag bits 4 least significant bits to be 0010.
+                if byte & PACKET_FLAG_BITS != 2 {
+                    return Err(PacketError::new(
+                        PacketErrorKind::FlagBits,
+                        format!(
+                            "Invalid flag bits: {} for packet type: {}, bits must be 0x_2.",
+                            byte, type_
+                        ),
+                    ));
+                }
+            }
             _ => {
-                // value of 0b0000_0110 is the only reachable value here
+                // all other packets must have flag bits that are equal to 0.
+                if byte & PACKET_FLAG_BITS != 0 {
+                    return Err(PacketError::new(
+                        PacketErrorKind::FlagBits,
+                        format!(
+                            "Invalid flag bits: {} for packet type: {}, bits must be 0x_0.",
+                            byte, type_
+                        ),
+                    ));
+                }
+            }
+        }
+        return Ok(Self { byte });
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum PacketType {
+    CONNECT = 0b0001_0000,
+    CONNACK = 0b0010_0000,
+    PUBLISH = 0b0011_0000,
+    PUBACK = 0b0100_0000,
+    PUBREC = 0b0101_0000,
+    PUBREL = 0b0110_0000,
+    PUBCOMP = 0b0111_0000,
+    SUBSCRIBE = 0b1000_0000,
+    SUBACK = 0b1001_0000,
+    UNSUBSCRIBE = 0b1010_0000,
+    UNSUBACK = 0b1011_0000,
+    PINGREQ = 0b1100_0000,
+    PINGRESP = 0b1101_0000,
+    DISCONNECT = 0b1110_0000,
+}
+
+impl TryFrom<u8> for PacketType {
+    type Error = PacketError;
+    fn try_from(value: u8) -> Result<Self, PacketError> {
+        // we only want to match on the left four bits.
+
+        let out = match value & PACKET_TYPE_BITS {
+            0x10 => Self::CONNECT,
+            0x20 => Self::CONNACK,
+            0x30 => Self::PUBLISH,
+            0x40 => Self::PUBACK,
+            0x50 => Self::PUBREC,
+            0x60 => Self::PUBREL,
+            0x70 => Self::PUBCOMP,
+            0x80 => Self::SUBSCRIBE,
+            0x90 => Self::SUBACK,
+            0xA0 => Self::UNSUBSCRIBE,
+            0xB0 => Self::UNSUBACK,
+            0xC0 => Self::PINGREQ,
+            0xD0 => Self::PINGRESP,
+            0xE0 => Self::DISCONNECT,
+            _ => {
                 return Err(PacketError::new(
-                    PacketErrorKind::QoS,
-                    format!("QoS MUST equal 0, 1, or 2: {}", value.to_string()),
-                ));
+                    PacketErrorKind::PacketType,
+                    format!("Packet type {} is not a valid packet.", value),
+                ))
             }
         };
-
         return Ok(out);
     }
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
-pub struct TopicFilter(Vec<TopicToken>);
-
-impl TopicFilter {
-    pub fn decode(bytes: Bytes) -> Result<(Self, Bytes), PacketError> {
-        let (string, bytes) = decode_utf8(bytes)?;
-        let tokens = Self::from_str(string.as_str())?;
-        return Ok((tokens, bytes));
-    }
-
-    pub fn from_str(str: &'_ str) -> Result<Self, PacketError> {
-        let mut tokens = Vec::new();
-        let mut strs = str.split('/').peekable();
-
-        loop {
-            if let Some(str) = strs.peek() {
-                let token = TopicToken::from_str(*str);
-                tokens.push(token);
-
-                // consume the str to advance the iterator.
-                strs.next();
-            } else {
-                break;
-            }
-        }
-        if let Some(token) = tokens.iter().last() {
-            if token == &TopicToken::MultiLevel {
-                if strs.peek().is_some() {
-                    return Err(PacketError::new(
-                        PacketErrorKind::MalformedTopicFilter,
-                        format!(
-                            "The multi-level wildcard '#' must be at the end of a topic filter. {}",
-                            &str
-                        ),
-                    ));
-                }
-            }
-        }
-
-        return Ok(Self(tokens));
-    }
-
-    //TODO: this is really inefficient...
-    pub fn to_string(self) -> String {
-        let mut string = String::new();
-        for token in self.into_iter() {
-            string += token.as_str();
-        }
-        return string;
-    }
-
-    //TODO: this is really inefficient...
-    pub fn len(&self) -> usize {
-        let mut len = 0;
-        for token in &self.0 {
-            match token {
-                TopicToken::String(string) => len += string.len(),
-                _ => len += 1,
-            }
-        }
-
-        return len;
-    }
-}
-
-#[derive(PartialEq, PartialOrd, Eq, Ord, Clone, Debug)]
-pub struct TopicName(Vec<TopicToken>);
-
-impl TopicName {
-    pub fn decode(bytes: Bytes) -> Result<(Self, Bytes), PacketError> {
-        let (string, bytes) = decode_utf8(bytes)?;
-        let tokens = Self::from_str(string.as_str())?;
-        return Ok((tokens, bytes));
-    }
-
-    pub fn from_str(str: &'_ str) -> Result<Self, PacketError> {
-        let mut tokens = Vec::new();
-        let mut strs = str.split('/').peekable();
-
-        loop {
-            if let Some(str) = strs.peek() {
-                let token = TopicToken::from_str(*str);
-                match token {
-                    TopicToken::String(_) => {}
-                    _ => {
-                        return Err(PacketError::new(
-                            PacketErrorKind::MalformedTopicName,
-                            format!("Invalid topic path: {str}, item: {str} is not allowed"),
-                        ))
-                    }
-                }
-
-                tokens.push(token);
-
-                // consume the str to advance the iterator.
-                strs.next();
-            } else {
-                break;
-            }
-        }
-        if let Some(token) = tokens.iter().last() {
-            if token == &TopicToken::MultiLevel {
-                if strs.peek().is_some() {
-                    return Err(PacketError::new(
-                        PacketErrorKind::MalformedTopicFilter,
-                        format!(
-                            "The multi-level wildcard '#' must be at the end of a topic filter. {}",
-                            &str
-                        ),
-                    ));
-                }
-            }
-        }
-
-        return Ok(Self(tokens));
-    }
-
-    //TODO: this is really inefficient...
-    pub fn to_string(self) -> String {
-        let mut string = String::new();
-        for token in self.into_iter() {
-            string += token.as_str();
-            string.push('/');
-        }
-        string.pop();
-        return string;
-    }
-
-    //TODO: this is really inefficient...
-    pub fn len(&self) -> usize {
-        let mut len = 0;
-        for token in &self.0 {
-            match token {
-                TopicToken::String(string) => len += string.len() + 1,
-                _ => len += 2,
-            }
-        }
-
-        return len - 1;
-    }
-}
-
-impl IntoIterator for TopicName {
-    type Item = TopicToken;
-    type IntoIter = std::vec::IntoIter<TopicToken>;
-    fn into_iter(self) -> Self::IntoIter {
-        self.0.into_iter()
-    }
-}
-
-impl PartialEq<TopicFilter> for TopicName {
-    fn eq(&self, other: &TopicFilter) -> bool {
-        let iters = self.0.iter().zip(other.0.iter());
-        for (self_token, filter_token) in iters {
-            // filter does not match topic name
-            if self_token != filter_token {
-                return false;
-            }
-            // handle cases that end in #
-            if *filter_token == TopicToken::MultiLevel {
-                return true;
-            }
-        }
-        // handle exact matches or cases that dont end in #
-        return true;
-    }
-}
-
-impl IntoIterator for TopicFilter {
-    type Item = TopicToken;
-    type IntoIter = std::vec::IntoIter<TopicToken>;
-    fn into_iter(self) -> Self::IntoIter {
-        self.0.into_iter()
-    }
-}
-
-#[derive(Eq, PartialOrd, Ord, Clone, Debug, PartialEq)]
-pub enum TopicToken {
-    MultiLevel,
-    SingleLevel,
-    String(String),
-}
-
-impl TopicToken {
-    fn as_str<'a>(&'a self) -> &'a str {
+impl Display for PacketType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::MultiLevel => return "#",
-            Self::SingleLevel => return "+",
-            Self::String(string) => return string.as_str(),
-        }
-    }
-
-    fn from_str(string: &'_ str) -> Self {
-        match string {
-            "#" => return Self::MultiLevel,
-            "+" => return Self::SingleLevel,
-            _ => return Self::String(String::from(string)),
+            Self::CONNECT => write!(f, "PacketType::CONNECT"),
+            Self::CONNACK => write!(f, "PacketType::CONNACK"),
+            Self::PUBLISH => write!(f, "PacketType::PUBLISH"),
+            Self::PUBACK => write!(f, "PacketType::PUBACK"),
+            Self::PUBREC => write!(f, "PacketType::PUBREQ"),
+            Self::PUBREL => write!(f, "PacketType::PUBREL"),
+            Self::PUBCOMP => write!(f, "PacketType::PUBCOMP"),
+            Self::SUBSCRIBE => write!(f, "PacketType::SUBSCRIBE"),
+            Self::SUBACK => write!(f, "PacketType::SUBACK"),
+            Self::UNSUBSCRIBE => write!(f, "PacketType::UNSUBSCRIBE"),
+            Self::UNSUBACK => write!(f, "PacketType::UNSUBACK"),
+            Self::PINGREQ => write!(f, "PacketType::PINGREQ"),
+            Self::PINGRESP => write!(f, "PacketType::PINGRESP"),
+            Self::DISCONNECT => write!(f, "PacketType::DISCONNECT"),
         }
     }
 }

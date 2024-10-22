@@ -1,6 +1,9 @@
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 
-use crate::{err::PacketError, FixedHeader, PacketType};
+use crate::{
+    err::PacketError,
+    v3::{FixedHeader, PacketType},
+};
 
 /*
  * The PUBCOMP Packet is the response to a PUBREL Packet.
@@ -44,7 +47,7 @@ impl PubCompPacket {
 
 #[cfg(test)]
 mod test {
-    use crate::MqttPacket;
+    use crate::v3::MqttPacket;
 
     use super::PubCompPacket;
 

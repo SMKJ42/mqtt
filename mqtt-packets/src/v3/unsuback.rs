@@ -1,6 +1,9 @@
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 
-use crate::{err::PacketError, FixedHeader, PacketType};
+use crate::{
+    err::PacketError,
+    v3::{FixedHeader, PacketType},
+};
 
 /*
  * The UNSUBACK Packet is sent by the Server to the Client to confirm receipt of an UNSUBSCRIBE Packet.
@@ -43,7 +46,7 @@ impl UnsubAckPacket {
 
 #[cfg(test)]
 mod test {
-    use crate::MqttPacket;
+    use crate::v3::MqttPacket;
 
     use super::UnsubAckPacket;
 

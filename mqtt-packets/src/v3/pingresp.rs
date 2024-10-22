@@ -1,6 +1,9 @@
 use bytes::{BufMut, Bytes, BytesMut};
 
-use crate::{err::PacketError, FixedHeader, PacketType};
+use crate::{
+    err::PacketError,
+    v3::{FixedHeader, PacketType},
+};
 
 /*
  * A PINGRESP Packet is sent by the Server to the Client in response to a PINGREQ Packet. It indicates that the Server is alive.
@@ -37,7 +40,7 @@ impl PingRespPacket {
 
 #[cfg(test)]
 mod test {
-    use crate::MqttPacket;
+    use crate::v3::MqttPacket;
 
     use super::PingRespPacket;
 

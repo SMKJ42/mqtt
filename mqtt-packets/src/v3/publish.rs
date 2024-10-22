@@ -3,11 +3,12 @@ use std::fmt::Debug;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 
 use crate::{
+    err::PacketError,
     io::{decode_utf8, encode_packet_length, encode_utf8},
-    FixedHeader, PacketError, PacketType,
+    v3::{FixedHeader, PacketType},
 };
 
-use super::{QosLevel, TopicName};
+use super::shared::{QosLevel, TopicName};
 
 /*
  * A PUBLISH Control Packet is sent from a Client to a Server
@@ -279,7 +280,7 @@ impl PublishFixedHeaderFlags {
 mod test {
     use bytes::Bytes;
 
-    use crate::{MqttPacket, TopicName};
+    use crate::v3::{shared::TopicName, MqttPacket};
 
     use super::PublishPacket;
 

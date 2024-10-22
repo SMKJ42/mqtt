@@ -1,6 +1,9 @@
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 
-use super::{MqttPacket, PacketError, PacketErrorKind};
+use crate::{
+    err::{PacketError, PacketErrorKind},
+    v3::MqttPacket,
+};
 
 /*
  * MQTT v3.1.1 standard, Remaining length field on the fixed header can be at
@@ -19,7 +22,7 @@ pub fn encode_packet_length(bytes: &mut BytesMut, mut len: usize) -> Result<usiz
                 "Cannot encode packet, exceeded max length of 128.pow(4) - 1 {}",
                 len
             ),
-    ));
+        ));
     }
 
     let mut num_bytes = 0;

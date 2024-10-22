@@ -1,6 +1,9 @@
 use bytes::{BufMut, Bytes, BytesMut};
 
-use crate::{err::PacketError, FixedHeader, PacketType};
+use crate::{
+    err::PacketError,
+    v3::{FixedHeader, PacketType},
+};
 
 /*
  * The DISCONNECT Packet is the final Control Packet sent from the Client to the Server.
@@ -37,7 +40,7 @@ impl DisconnectPacket {
 
 #[cfg(test)]
 mod test {
-    use crate::MqttPacket;
+    use crate::v3::MqttPacket;
 
     use super::DisconnectPacket;
 

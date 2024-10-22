@@ -1,6 +1,9 @@
 use bytes::{BufMut, Bytes, BytesMut};
 
-use crate::{err::PacketError, FixedHeader, PacketType};
+use crate::{
+    err::PacketError,
+    v3::{FixedHeader, PacketType},
+};
 
 /*
  * The PINGREQ Packet is sent from a Client to the Server. It can be used to:
@@ -41,7 +44,7 @@ impl PingReqPacket {
 
 #[cfg(test)]
 mod test {
-    use crate::MqttPacket;
+    use crate::v3::MqttPacket;
 
     use super::PingReqPacket;
 

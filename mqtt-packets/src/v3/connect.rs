@@ -3,9 +3,9 @@ use std::fmt::Debug;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 
 use crate::io::{decode_bytes, decode_utf8, encode_bytes, encode_packet_length, encode_utf8};
-use crate::{PacketError, PacketErrorKind, PacketType};
+use crate::v3::{PacketError, PacketErrorKind, PacketType};
 
-use super::QosLevel;
+use super::shared::QosLevel;
 
 /*
  * After a Network Connection is established by a Client to a Server,
@@ -649,7 +649,7 @@ impl Protocol {
 #[cfg(test)]
 mod connect_packet {
 
-    use crate::MqttPacket;
+    use crate::v3::MqttPacket;
 
     use super::{ConnectPacket, Protocol};
 

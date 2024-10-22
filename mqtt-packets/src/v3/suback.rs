@@ -1,8 +1,8 @@
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 
-use crate::{io::encode_packet_length, PacketError, PacketType};
+use crate::{err::PacketError, io::encode_packet_length, v3::PacketType};
 
-use super::QosLevel;
+use super::shared::QosLevel;
 
 /*
  * A SUBACK Packet is sent by the Server to the Client to confirm receipt and processing of a SUBSCRIBE Packet.
@@ -96,7 +96,7 @@ impl TryFrom<u8> for TopicFilterResponse {
 
 #[cfg(test)]
 mod test {
-    use crate::{suback::TopicFilterResponse, MqttPacket, QosLevel};
+    use crate::v3::{shared::QosLevel, suback::TopicFilterResponse, MqttPacket};
 
     use super::SubAckPacket;
 
