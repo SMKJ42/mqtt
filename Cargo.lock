@@ -72,19 +72,25 @@ dependencies = [
 ]
 
 [[package]]
-name = "mqtt_client"
-version = "0.1.0"
-
-[[package]]
-name = "mqtt_packets"
+name = "mqtt-packets"
 version = "0.1.0"
 dependencies = [
  "bytes",
 ]
 
 [[package]]
+name = "mqtt_client"
+version = "0.1.0"
+dependencies = [
+ "mqtt-packets",
+]
+
+[[package]]
 name = "mqtt_server"
 version = "0.1.0"
+dependencies = [
+ "mqtt-packets",
+]
 
 [[package]]
 name = "object"
@@ -105,7 +111,7 @@ checksum = "bda66fc9667c18cb2758a2ac84d1167245054bcf85d5d1aaa6923f45801bdd02"
 name = "rs_mqtt"
 version = "0.0.0"
 dependencies = [
- "mqtt_packets",
+ "mqtt-packets",
  "tokio",
 ]
 

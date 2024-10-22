@@ -4,8 +4,8 @@ version = "0.0.0"
 edition = "2021"
 
 [dependencies]
-mqtt_packets = { path = "mqtt_packets" }
+mqtt-packets = { path = "mqtt-packets" }
 tokio = "1.40.0"
 
 [workspace]
-members = [ "mqtt_client","mqtt_server"]
+members = [ "mqtt-client", "mqtt-server", "mqtt-packets" ]
