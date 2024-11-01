@@ -1,9 +1,7 @@
 use bytes::{Buf, BufMut, Bytes, BytesMut};
+use mqtt_core::err::{PacketError, PacketErrorKind};
 
-use crate::{
-    err::PacketError,
-    v3::{FixedHeader, PacketType},
-};
+use crate::v3::{FixedHeader, PacketType};
 
 /*
  * The UNSUBACK Packet is sent by the Server to the Client to confirm receipt of an UNSUBSCRIBE Packet.
@@ -21,7 +19,7 @@ impl UnsubAckPacket {
     pub fn decode(f_header: FixedHeader, mut bytes: Bytes) -> Result<Self, PacketError> {
         if f_header.len != 2 {
             return Err(PacketError::new(
-                crate::err::PacketErrorKind::MalformedLength,
+                PacketErrorKind::MalformedLength,
                 format!("UNSUBACK packet must be of length 2"),
             ));
         } else {
@@ -46,17 +44,18 @@ impl UnsubAckPacket {
 
 #[cfg(test)]
 mod test {
-    use crate::v3::MqttPacket;
+    use crate::v3::{FixedHeader, MqttPacket};
 
     use super::UnsubAckPacket;
 
     #[test]
     fn unsuback_serialize_deserialize() {
         let packet = UnsubAckPacket::new(1234);
+        let buf = packet.encode();
 
-        let packet_en = packet.encode();
+        let (f_header, buf) = FixedHeader::decode(buf).unwrap();
+        let packet_de = MqttPacket::decode(f_header, buf).expect("Could not decode packet");
 
-        let packet_de = MqttPacket::decode(packet_en).expect("Could not decode packt");
-        assert_eq!(MqttPacket::UnsubAck(packet), packet_de);
+        assert_eq!(packet_de, MqttPacket::UnsubAck(packet));
     }
 }

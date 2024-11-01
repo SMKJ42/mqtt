@@ -8,17 +8,17 @@ pub mod pubcomp;
 pub mod publish;
 pub mod pubrec;
 pub mod pubrel;
-pub mod shared;
 pub mod suback;
 pub mod subscribe;
 pub mod unsuback;
 pub mod unsubscribe;
 
-use crate::io::decode_packet_length;
-
-use super::err::{PacketError, PacketErrorKind};
 use bytes::{Buf, Bytes};
 use disconnect::DisconnectPacket;
+use mqtt_core::{
+    err::{PacketError, PacketErrorKind},
+    io::decode_packet_length,
+};
 use pingreq::PingReqPacket;
 use pingresp::PingRespPacket;
 use puback::PubAckPacket;
@@ -38,12 +38,12 @@ use unsubscribe::UnsubscribePacket;
 const PACKET_TYPE_BITS: u8 = 0b1111_0000;
 const PACKET_FLAG_BITS: u8 = 0b0000_1111;
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub enum MqttPacket {
     ConnAck(ConnAckPacket),
     Connect(ConnectPacket),
     Disconnect(DisconnectPacket),
-    PinReq(PingReqPacket),
+    PingReq(PingReqPacket),
     PingResp(PingRespPacket),
     PubAck(PubAckPacket),
     PubComp(PubCompPacket),
@@ -57,16 +57,12 @@ pub enum MqttPacket {
 }
 
 impl MqttPacket {
-    pub fn decode(mut bytes: Bytes) -> Result<Self, PacketError> {
-        let f_header: FixedHeader;
-
-        (f_header, bytes) = FixedHeader::decode(bytes)?;
-
+    pub fn decode(f_header: FixedHeader, mut bytes: Bytes) -> Result<Self, PacketError> {
         return match f_header.type_ {
             PacketType::CONNACK => Ok(Self::ConnAck(ConnAckPacket::decode(bytes)?)),
             PacketType::CONNECT => Ok(Self::Connect(ConnectPacket::decode(bytes)?)),
             PacketType::DISCONNECT => Ok(Self::Disconnect(DisconnectPacket::decode(f_header)?)),
-            PacketType::PINGREQ => Ok(Self::PinReq(PingReqPacket::decode(f_header)?)),
+            PacketType::PINGREQ => Ok(Self::PingReq(PingReqPacket::decode(f_header)?)),
             PacketType::PINGRESP => Ok(Self::PingResp(PingRespPacket::decode(f_header)?)),
             PacketType::PUBACK => Ok(Self::PubAck(PubAckPacket::decode(f_header, bytes)?)),
             PacketType::PUBCOMP => Ok(Self::PubComp(PubCompPacket::decode(f_header, bytes)?)),
@@ -77,6 +73,25 @@ impl MqttPacket {
             PacketType::SUBSCRIBE => Ok(Self::Subscribe(SubscribePacket::decode(bytes)?)),
             PacketType::UNSUBACK => Ok(Self::UnsubAck(UnsubAckPacket::decode(f_header, bytes)?)),
             PacketType::UNSUBSCRIBE => Ok(Self::Unsubscribe(UnsubscribePacket::decode(bytes)?)),
+        };
+    }
+
+    pub fn encode(&self) -> Result<Bytes, PacketError> {
+        return match self {
+            Self::ConnAck(packet) => Ok(packet.encode()),
+            Self::Connect(packet) => packet.encode(),
+            Self::Disconnect(packet) => Ok(packet.encode()),
+            Self::PingReq(packet) => Ok(packet.encode()),
+            Self::PingResp(packet) => Ok(packet.encode()),
+            Self::PubAck(packet) => Ok(packet.encode()),
+            Self::PubComp(packet) => Ok(packet.encode()),
+            Self::Publish(packet) => packet.encode(),
+            Self::PubRel(packet) => Ok(packet.encode()),
+            Self::PubRec(packet) => Ok(packet.encode()),
+            Self::SubAck(packet) => packet.encode(),
+            Self::Subscribe(packet) => packet.encode(),
+            Self::UnsubAck(packet) => Ok(packet.encode()),
+            Self::Unsubscribe(packet) => packet.encode(),
         };
     }
 }
@@ -147,6 +162,10 @@ impl FixedHeader {
 
     pub fn set_flags(&mut self, flags: HeaderFlags) {
         self.flags = flags;
+    }
+
+    pub fn len(&self) -> usize {
+        return self.len;
     }
 }
 

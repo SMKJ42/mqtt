@@ -1,9 +1,7 @@
 use bytes::{BufMut, Bytes, BytesMut};
+use mqtt_core::err::{PacketError, PacketErrorKind};
 
-use crate::{
-    err::PacketError,
-    v3::{FixedHeader, PacketType},
-};
+use crate::v3::{FixedHeader, PacketType};
 
 /*
  * A PINGRESP Packet is sent by the Server to the Client in response to a PINGREQ Packet. It indicates that the Server is alive.
@@ -20,7 +18,7 @@ impl PingRespPacket {
     pub fn decode(f_header: FixedHeader) -> Result<Self, PacketError> {
         if f_header.len != 0 {
             return Err(PacketError::new(
-                crate::err::PacketErrorKind::MalformedLength,
+                PacketErrorKind::MalformedLength,
                 format!("RINGRESP packet must be of length 0"),
             ));
         } else {
@@ -40,17 +38,18 @@ impl PingRespPacket {
 
 #[cfg(test)]
 mod test {
-    use crate::v3::MqttPacket;
+    use crate::v3::{FixedHeader, MqttPacket};
 
     use super::PingRespPacket;
 
     #[test]
     fn pingresp_serialize_deserialize() {
         let packet = PingRespPacket::new();
+        let buf = packet.encode();
 
-        let packet_en = packet.encode();
+        let (f_header, buf) = FixedHeader::decode(buf).unwrap();
+        let packet_de = MqttPacket::decode(f_header, buf).expect("Could not decode packet");
 
-        let packet_de = MqttPacket::decode(packet_en).expect("Could not decode packet");
-        assert_eq!(MqttPacket::PingResp(packet), packet_de);
+        assert_eq!(packet_de, MqttPacket::PingResp(packet));
     }
 }

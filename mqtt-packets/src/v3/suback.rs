@@ -1,8 +1,7 @@
 use bytes::{Buf, BufMut, Bytes, BytesMut};
+use mqtt_core::{err::PacketError, io::encode_packet_length, qos::QosLevel};
 
-use crate::{err::PacketError, io::encode_packet_length, v3::PacketType};
-
-use super::shared::QosLevel;
+use super::PacketType;
 
 /*
  * A SUBACK Packet is sent by the Server to the Client to confirm receipt and processing of a SUBSCRIBE Packet.
@@ -96,17 +95,21 @@ impl TryFrom<u8> for TopicFilterResponse {
 
 #[cfg(test)]
 mod test {
-    use crate::v3::{shared::QosLevel, suback::TopicFilterResponse, MqttPacket};
+
+    use mqtt_core::qos::QosLevel;
+
+    use crate::v3::{suback::TopicFilterResponse, FixedHeader, MqttPacket};
 
     use super::SubAckPacket;
 
     #[test]
     fn suback_serialize_deserialize() {
         let packet = SubAckPacket::new(1234, vec![TopicFilterResponse::QOS(QosLevel::AtLeastOnce)]);
+        let buf = packet.encode().unwrap();
 
-        let packet_en = packet.encode().expect("Could not encode packet");
+        let (f_header, buf) = FixedHeader::decode(buf).unwrap();
+        let packet_de = MqttPacket::decode(f_header, buf).expect("Could not decode packet");
 
-        let packet_de = MqttPacket::decode(packet_en).expect("Could not decode packet");
-        assert_eq!(MqttPacket::SubAck(packet), packet_de);
+        assert_eq!(packet_de, MqttPacket::SubAck(packet));
     }
 }

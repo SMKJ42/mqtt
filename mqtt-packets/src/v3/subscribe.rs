@@ -1,12 +1,12 @@
 use bytes::{Buf, BufMut, Bytes, BytesMut};
-
-use crate::{
+use mqtt_core::{
     err::PacketError,
     io::{encode_packet_length, encode_utf8},
-    v3::PacketType,
+    qos::QosLevel,
+    topics::TopicFilter,
 };
 
-use super::shared::{QosLevel, TopicFilter};
+use crate::v3::PacketType;
 
 /*
  * The SUBSCRIBE Packet is sent from the Client to the Server to create one or more Subscriptions.
@@ -92,14 +92,17 @@ impl SubscribePacket {
 
         return Ok(bytes.into());
     }
+
+    pub fn topic_filters(&self) -> Vec<(TopicFilter, QosLevel)> {
+        return self.payload.clone();
+    }
 }
 
 #[cfg(test)]
 mod test {
-    use crate::v3::{
-        shared::{QosLevel, TopicFilter},
-        MqttPacket,
-    };
+    use mqtt_core::{qos::QosLevel, topics::TopicFilter};
+
+    use crate::v3::{FixedHeader, MqttPacket};
 
     use super::SubscribePacket;
 
@@ -112,13 +115,11 @@ mod test {
                 QosLevel::AtLeastOnce,
             )],
         );
+        let buf = packet.encode().unwrap();
 
-        let packet_en = packet.encode().expect("Could not encode packet");
+        let (f_header, buf) = FixedHeader::decode(buf).unwrap();
+        let packet_de = MqttPacket::decode(f_header, buf).expect("Could not decode packet");
 
-        let packet_de = MqttPacket::decode(packet_en).expect("Could not decode packet");
-
-        // panic!("Stack overflow from equality check");
-
-        assert_eq!(MqttPacket::Subscribe(packet), packet_de);
+        assert_eq!(packet_de, MqttPacket::Subscribe(packet));
     }
 }

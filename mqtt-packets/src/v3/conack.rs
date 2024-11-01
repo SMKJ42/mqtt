@@ -1,12 +1,11 @@
-use bytes::{Buf, BufMut, Bytes, BytesMut};
-
 use crate::v3::{PacketError, PacketErrorKind, PacketType};
+use bytes::{Buf, BufMut, Bytes, BytesMut};
 
 /*
  * The CONNACK Packet is the packet sent by the Server in response to a CONNECT Packet received from a Client.
  *  The first packet sent from the Server to the Client MUST be a CONNACK Packet [MQTT-3.2.0-1].
  */
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Clone)]
 pub struct ConnAckPacket {
     /*
      * Byte 1 is the "Connect Acknowledge Flags". Bits 7-1 are reserved and MUST be set to 0.
@@ -37,22 +36,22 @@ pub struct ConnAckPacket {
      *
      * If a server sends a CONNACK packet containing a non-zero return code it MUST set Session Present to 0 [MQTT-3.2.2-4].
      */
-    conn_ack: bool,
+    session_present: bool,
     return_code: ConnectReturnCode,
 }
 
 impl ConnAckPacket {
-    pub fn new(conn_ack: bool, return_code: ConnectReturnCode) -> Self {
+    pub fn new(session_present: bool, return_code: ConnectReturnCode) -> Self {
         return Self {
-            conn_ack,
+            session_present,
             return_code,
         };
     }
 
     pub fn decode(mut bytes: Bytes) -> Result<Self, PacketError> {
-        let conn_ack_byte = bytes.get_u8();
+        let session_present_byte = bytes.get_u8();
 
-        if (conn_ack_byte & 0b1111_1110) != 0 {
+        if (session_present_byte & 0b1111_1110) != 0 {
             return Err(PacketError::new(
                 PacketErrorKind::AccessToReservedBit,
                 String::from(
@@ -64,7 +63,7 @@ impl ConnAckPacket {
         let return_code = bytes.get_u8().try_into()?;
 
         return Ok(Self {
-            conn_ack: conn_ack_byte != 0,
+            session_present: session_present_byte != 0,
             return_code,
         });
     }
@@ -79,7 +78,7 @@ impl ConnAckPacket {
         bytes.put_u8(2);
 
         // Encode value for 'session present'.
-        if self.conn_ack {
+        if self.session_present {
             bytes.put_u8(1);
         } else {
             bytes.put_u8(0);
@@ -126,17 +125,18 @@ impl TryFrom<u8> for ConnectReturnCode {
 
 #[cfg(test)]
 mod test {
-    use crate::v3::MqttPacket;
+    use crate::v3::{FixedHeader, MqttPacket};
 
     use super::ConnAckPacket;
 
     #[test]
     fn connack_serialize_deserialize() {
         let packet = ConnAckPacket::new(true, super::ConnectReturnCode::Accept);
+        let buf = packet.encode();
 
-        let packet_en = packet.encode();
+        let (f_header, buf) = FixedHeader::decode(buf).unwrap();
+        let packet_de = MqttPacket::decode(f_header, buf).expect("Could not decode packet");
 
-        let packet_de = MqttPacket::decode(packet_en).expect("Could not decode packet");
-        assert_eq!(MqttPacket::ConnAck(packet), packet_de);
+        assert_eq!(packet_de, MqttPacket::ConnAck(packet));
     }
 }

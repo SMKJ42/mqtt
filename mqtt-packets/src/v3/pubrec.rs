@@ -1,9 +1,7 @@
 use bytes::{Buf, BufMut, Bytes, BytesMut};
+use mqtt_core::err::{PacketError, PacketErrorKind};
 
-use crate::{
-    err::PacketError,
-    v3::{FixedHeader, PacketType},
-};
+use crate::v3::{FixedHeader, PacketType};
 
 /*
  * A PUBREC Packet is the response to a PUBLISH Packet with QoS 2.
@@ -22,7 +20,7 @@ impl PubRecPacket {
     pub fn decode(f_header: FixedHeader, mut bytes: Bytes) -> Result<Self, PacketError> {
         if f_header.len != 2 {
             return Err(PacketError::new(
-                crate::err::PacketErrorKind::MalformedLength,
+                PacketErrorKind::MalformedLength,
                 format!("PUBREC packet must be of length 2"),
             ));
         } else {
@@ -47,7 +45,7 @@ impl PubRecPacket {
 
 #[cfg(test)]
 mod test {
-    use crate::v3::MqttPacket;
+    use crate::v3::{FixedHeader, MqttPacket};
 
     use super::PubRecPacket;
 
@@ -55,9 +53,11 @@ mod test {
     fn pubrec_serialize_deserialize() {
         let packet = PubRecPacket::new(1234);
 
-        let packet_en = packet.encode();
+        let buf = packet.encode();
 
-        let packet_de = MqttPacket::decode(packet_en).expect("Could not decode packet");
-        assert_eq!(MqttPacket::PubRec(packet), packet_de);
+        let (f_header, buf) = FixedHeader::decode(buf).unwrap();
+        let packet_de = MqttPacket::decode(f_header, buf).expect("Could not decode packet");
+
+        assert_eq!(packet_de, MqttPacket::PubRec(packet));
     }
 }

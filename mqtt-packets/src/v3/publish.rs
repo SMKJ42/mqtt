@@ -1,14 +1,16 @@
 use std::fmt::Debug;
 
 use bytes::{Buf, BufMut, Bytes, BytesMut};
-
-use crate::{
+use mqtt_core::{
     err::PacketError,
     io::{decode_utf8, encode_packet_length, encode_utf8},
-    v3::{FixedHeader, PacketType},
+    qos::QosLevel,
+    topics::TopicName,
 };
 
-use super::shared::{QosLevel, TopicName};
+use crate::v3::{FixedHeader, PacketType};
+
+use super::connect::Will;
 
 /*
  * A PUBLISH Control Packet is sent from a Client to a Server
@@ -40,6 +42,7 @@ use super::shared::{QosLevel, TopicName};
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct PublishPacket {
+    flags: PublishFixedHeaderFlags,
     /*
      * The Topic Name MUST be present as the first field in the PUBLISH Packet Variable header.
      * It MUST be a UTF-8 encoded string [MQTT-3.3.2-1] as defined in section 1.5.3.
@@ -55,7 +58,6 @@ pub struct PublishPacket {
      *  Section 2.3.1 provides more information about Packet Identifiers.
      */
     packet_id: Option<u16>,
-    flags: PublishFixedHeaderFlags,
     payload: Bytes,
 }
 
@@ -69,23 +71,27 @@ impl PublishPacket {
         };
     }
 
-    pub fn with_qos_0(&mut self) {
+    pub fn set_qos_atmostonce(&mut self) {
         self.flags.set_qos(QosLevel::AtMostOnce);
     }
 
-    pub fn with_qos_1(&mut self, packet_id: u16) {
+    pub fn set_qos_atleastonce(&mut self, packet_id: u16) {
         self.flags.set_qos(QosLevel::AtLeastOnce);
         self.packet_id = Some(packet_id);
     }
 
-    pub fn with_qos_2(&mut self, packet_id: u16) {
+    pub fn set_qos_exactlyonce(&mut self, packet_id: u16) {
         self.flags.set_qos(QosLevel::ExactlyOnce);
         self.packet_id = Some(packet_id);
     }
 
+    pub fn topic(&self) -> &TopicName {
+        return &self.topic_name;
+    }
+
     pub fn decode(f_header: FixedHeader, bytes: Bytes) -> Result<Self, PacketError> {
         let (topic_name_in, mut bytes) = decode_utf8(bytes)?;
-        let topic_name = TopicName::from_str(&topic_name_in)?;
+        let topic_name = TopicName::from_str(topic_name_in.as_str())?;
 
         let flags = PublishFixedHeaderFlags::from_byte(f_header.flags.as_byte());
 
@@ -152,35 +158,62 @@ impl PublishPacket {
     }
 }
 
+impl From<(&Will, u16)> for PublishPacket {
+    fn from((will, packet_id): (&Will, u16)) -> Self {
+        let message = will.will_message().clone();
+        let mut packet = Self::new(will.will_topic().clone(), Bytes::from(message));
+
+        match will.will_qos() {
+            QosLevel::AtMostOnce => {
+                packet.set_qos_atmostonce();
+            }
+            QosLevel::AtLeastOnce => {
+                packet.set_qos_atleastonce(packet_id);
+            }
+            QosLevel::ExactlyOnce => {
+                packet.set_qos_exactlyonce(packet_id);
+            }
+        }
+
+        packet.set_retain(will.will_retain());
+
+        return packet;
+    }
+}
+
 /*
-* If the RETAIN flag is set to 1, in a PUBLISH Packet sent by a Client to a Server,
-* the Server MUST store the Application Message and its QoS, so that it can be delivered
-* to future subscribers whose subscriptions match its topic name [MQTT-3.3.1-5].
-
-* When a new subscription is established, the last retained message, if any,
-* on each matching topic name MUST be sent to the subscriber [MQTT-3.3.1-6].
-
-* If the Server receives a QoS 0 message with the RETAIN flag set to 1 it MUST discard
-* any message previously retained for that topic. It SHOULD store the new QoS 0 message
-* as the new retained message for that topic, but MAY choose to discard it at any
-* time - if this happens there will be no retained message for that topic [MQTT-3.3.1-7].
-
-* See Section 4.1 for more information on storing state
-*
-* When sending a PUBLISH Packet to a Client the Server MUST set the RETAIN flag to 1 if
-* a message is sent as a result of a new subscription being made by a Client [MQTT-3.3.1-8].
-* It MUST set the RETAIN flag to 0 when a PUBLISH Packet is sent to a Client because it matches
-* an established subscription regardless of how the flag was set in the message it received [MQTT-3.3.1-9].
-*
-* A PUBLISH Packet with a RETAIN flag set to 1 and a payload containing zero bytes will
-* be processed as normal by the Server and sent to Clients with a subscription matching
-* the topic name. Additionally any existing retained message with the same topic name MUST
-* be removed and any future subscribers for the topic will not receive a retained message [MQTT-3.3.1-10]. “As normal” means that the RETAIN flag is not set in the message received by existing Clients. A zero byte retained message MUST NOT be stored as a retained message on the Server [MQTT-3.3.1-11].
-*
-* If the RETAIN flag is 0, in a PUBLISH Packet sent by a Client to a Server,
-* the Server MUST NOT store the message and MUST NOT remove or replace any existing
-* retained message [MQTT-3.3.1-12].
-*/
+ * If the RETAIN flag is set to 1, in a PUBLISH Packet sent by a Client to a Server,
+ * the Server MUST store the Application Message and its QoS, so that it can be delivered
+ * to future subscribers whose subscriptions match its topic name [MQTT-3.3.1-5].
+ *
+ * When a new subscription is established, the last retained message, if any,
+ * on each matching topic name MUST be sent to the subscriber [MQTT-3.3.1-6].
+ *
+ * If the Server receives a QoS 0 message with the RETAIN flag set to 1 it MUST discard
+ * any message previously retained for that topic. It SHOULD store the new QoS 0 message
+ * as the new retained message for that topic, but MAY choose to discard it at any
+ * time - if this happens there will be no retained message for that topic [MQTT-3.3.1-7].
+ *
+ * See Section 4.1 for more information on storing state
+ *
+ * When sending a PUBLISH Packet to a Client the Server MUST set the RETAIN flag to 1 if
+ * a message is sent as a result of a new subscription being made by a Client [MQTT-3.3.1-8].
+ *
+ * It MUST set the RETAIN flag to 0 when a PUBLISH Packet is sent to a Client because it matches
+ * an established subscription regardless of how the flag was set in the message it received [MQTT-3.3.1-9].
+ *
+ * A PUBLISH Packet with a RETAIN flag set to 1 and a payload containing zero bytes will
+ * be processed as normal by the Server and sent to Clients with a subscription matching
+ * the topic name. Additionally any existing retained message with the same topic name MUST
+ * be removed and any future subscribers for the topic will not receive a retained message [MQTT-3.3.1-10].
+ *
+ * “As normal” means that the RETAIN flag is not set in the message received by existing Clients.
+ *  A zero byte retained message MUST NOT be stored as a retained message on the Server [MQTT-3.3.1-11].
+ *
+ * If the RETAIN flag is 0, in a PUBLISH Packet sent by a Client to a Server,
+ * the Server MUST NOT store the message and MUST NOT remove or replace any existing
+ * retained message [MQTT-3.3.1-12].
+ */
 const RETAIN: u8 = 0b0000_0001;
 
 /*
@@ -279,8 +312,9 @@ impl PublishFixedHeaderFlags {
 #[cfg(test)]
 mod test {
     use bytes::Bytes;
+    use mqtt_core::topics::TopicName;
 
-    use crate::v3::{shared::TopicName, MqttPacket};
+    use crate::v3::{FixedHeader, MqttPacket};
 
     use super::PublishPacket;
 
@@ -291,14 +325,12 @@ mod test {
             TopicName::from_str("this/is/a/test").expect("Could not create topic name"),
             Bytes::from_iter([117]),
         );
+        let buf = packet.encode().unwrap();
 
-        let packet_en = packet
-            .encode()
-            .expect(format!("Could not encode packet: {:?}", packet).as_str());
+        let (f_header, buf) = FixedHeader::decode(buf).unwrap();
+        let packet_de = MqttPacket::decode(f_header, buf).expect("Could not decode packet");
 
-        let packet_de = MqttPacket::decode(packet_en.clone())
-            .expect(format!("Could not decode packet: {:?}", packet_en).as_str());
-        assert_eq!(MqttPacket::Publish(packet), packet_de);
+        assert_eq!(packet_de, MqttPacket::Publish(packet));
     }
 
     // Test QoS encode and decode
@@ -308,14 +340,13 @@ mod test {
             TopicName::from_str("this/is/a/test").expect("Could not create topic name"),
             Bytes::from_iter([117]),
         );
-        packet.with_qos_1(1234);
+        packet.set_qos_atleastonce(1234);
 
-        let packet_en = packet
-            .encode()
-            .expect(format!("Could not encode packet: {:?}", packet).as_str());
+        let buf = packet.encode().unwrap();
 
-        let packet_de = MqttPacket::decode(packet_en.clone())
-            .expect(format!("Could not decode packet: {:?}", packet_en).as_str());
-        assert_eq!(MqttPacket::Publish(packet), packet_de);
+        let (f_header, buf) = FixedHeader::decode(buf).unwrap();
+        let packet_de = MqttPacket::decode(f_header, buf).expect("Could not decode packet");
+
+        assert_eq!(packet_de, MqttPacket::Publish(packet));
     }
 }

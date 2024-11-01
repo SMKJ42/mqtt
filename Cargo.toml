@@ -1,11 +1,2 @@
-[package]
-name = "rs_mqtt"
-version = "0.0.0"
-edition = "2021"
-
-[dependencies]
-mqtt-packets = { path = "mqtt-packets" }
-tokio = "1.40.0"
-
 [workspace]
-members = [ "mqtt-client", "mqtt-server", "mqtt-packets" ]
+members = [ "mqtt-client", "mqtt-broker", "mqtt-packets", "mqtt-core" ]

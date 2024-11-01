@@ -1,9 +1,6 @@
+use crate::v3::{FixedHeader, PacketType};
 use bytes::{BufMut, Bytes, BytesMut};
-
-use crate::{
-    err::PacketError,
-    v3::{FixedHeader, PacketType},
-};
+use mqtt_core::err::{PacketError, PacketErrorKind};
 
 /*
  * The PINGREQ Packet is sent from a Client to the Server. It can be used to:
@@ -24,7 +21,7 @@ impl PingReqPacket {
     pub fn decode(f_header: FixedHeader) -> Result<Self, PacketError> {
         if f_header.len != 0 {
             return Err(PacketError::new(
-                crate::err::PacketErrorKind::MalformedLength,
+                PacketErrorKind::MalformedLength,
                 format!("PINGREQ packet must be of length 0"),
             ));
         } else {
@@ -44,17 +41,18 @@ impl PingReqPacket {
 
 #[cfg(test)]
 mod test {
-    use crate::v3::MqttPacket;
+    use crate::v3::{FixedHeader, MqttPacket};
 
     use super::PingReqPacket;
 
     #[test]
     fn pingreq_serialize_deserialize() {
         let packet = PingReqPacket::new();
+        let buf = packet.encode();
 
-        let packet_en = packet.encode();
+        let (f_header, buf) = FixedHeader::decode(buf).unwrap();
+        let packet_de = MqttPacket::decode(f_header, buf).expect("Could not decode packet");
 
-        let packet_de = MqttPacket::decode(packet_en).expect("Could not decode packet");
-        assert_eq!(MqttPacket::PinReq(packet), packet_de);
+        assert_eq!(packet_de, MqttPacket::PingReq(packet));
     }
 }

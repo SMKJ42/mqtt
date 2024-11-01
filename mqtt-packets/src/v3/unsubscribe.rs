@@ -1,12 +1,11 @@
 use bytes::{Buf, BufMut, Bytes, BytesMut};
-
-use crate::{
+use mqtt_core::{
     err::PacketError,
     io::{encode_packet_length, encode_utf8},
-    v3::PacketType,
+    topics::TopicFilter,
 };
 
-use super::shared::TopicFilter;
+use crate::v3::PacketType;
 
 /*
  * An UNSUBSCRIBE Packet is sent by the Client to the Server, to unsubscribe from topics.
@@ -67,7 +66,9 @@ impl UnsubscribePacket {
 
 #[cfg(test)]
 mod test {
-    use crate::v3::{shared::TopicFilter, MqttPacket};
+    use mqtt_core::topics::TopicFilter;
+
+    use crate::v3::{FixedHeader, MqttPacket};
 
     use super::UnsubscribePacket;
 
@@ -75,10 +76,11 @@ mod test {
     fn unsubscribe_serialize_deserialize() {
         let packet = UnsubscribePacket::new(1234, vec![TopicFilter::from_str("test").unwrap()]);
 
-        let packet_en = packet.encode().expect("Could not encode packet");
+        let buf = packet.encode().unwrap();
 
-        let packet_de = MqttPacket::decode(packet_en).expect("Could not decode packet");
+        let (f_header, buf) = FixedHeader::decode(buf).unwrap();
+        let packet_de = MqttPacket::decode(f_header, buf).expect("Could not decode packet");
 
-        assert_eq!(MqttPacket::Unsubscribe(packet), packet_de);
+        assert_eq!(packet_de, MqttPacket::Unsubscribe(packet));
     }
 }

@@ -1,9 +1,6 @@
+use crate::v3::{FixedHeader, PacketType};
 use bytes::{BufMut, Bytes, BytesMut};
-
-use crate::{
-    err::PacketError,
-    v3::{FixedHeader, PacketType},
-};
+use mqtt_core::err::{PacketError, PacketErrorKind};
 
 /*
  * The DISCONNECT Packet is the final Control Packet sent from the Client to the Server.
@@ -20,7 +17,7 @@ impl DisconnectPacket {
     pub fn decode(f_header: FixedHeader) -> Result<Self, PacketError> {
         if f_header.len != 0 {
             return Err(PacketError::new(
-                crate::err::PacketErrorKind::MalformedLength,
+                PacketErrorKind::MalformedLength,
                 format!("DISCONNECT packet must be of length 0"),
             ));
         } else {
@@ -40,17 +37,18 @@ impl DisconnectPacket {
 
 #[cfg(test)]
 mod test {
-    use crate::v3::MqttPacket;
+    use crate::v3::{FixedHeader, MqttPacket};
 
     use super::DisconnectPacket;
 
     #[test]
     fn disconnect_serialize_deserialize() {
         let packet = DisconnectPacket::new();
+        let buf = packet.encode();
 
-        let packet_en = packet.encode();
+        let (f_header, buf) = FixedHeader::decode(buf).unwrap();
+        let packet_de = MqttPacket::decode(f_header, buf).expect("Could not decode packet");
 
-        let packet_de = MqttPacket::decode(packet_en).expect("Could not decode packet");
-        assert_eq!(MqttPacket::Disconnect(packet), packet_de);
+        assert_eq!(packet_de, MqttPacket::Disconnect(packet));
     }
 }

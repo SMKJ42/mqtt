@@ -1,11 +1,11 @@
-use std::fmt::Debug;
-
-use bytes::{Buf, BufMut, Bytes, BytesMut};
-
-use crate::io::{decode_bytes, decode_utf8, encode_bytes, encode_packet_length, encode_utf8};
 use crate::v3::{PacketError, PacketErrorKind, PacketType};
-
-use super::shared::QosLevel;
+use bytes::{Buf, BufMut, Bytes, BytesMut};
+use mqtt_core::{
+    io::{decode_bytes, decode_utf8, encode_bytes, encode_packet_length, encode_utf8},
+    qos::QosLevel,
+    topics::TopicName,
+};
+use std::fmt::Debug;
 
 /*
  * After a Network Connection is established by a Client to a Server,
@@ -166,7 +166,7 @@ pub struct ConnectPacket {
      * Note that a Server is permitted to disconnect a Client that it determines to be inactive or non-responsive
      * at any time, regardless of the Keep Alive value provided by that Client.
      */
-    keep_alive: u16,
+    pub keep_alive: u16,
 
     /*
      * The Client Identifier (ClientId) identifies the Client to the Server.
@@ -198,9 +198,9 @@ pub struct ConnectPacket {
      * If the Server rejects the ClientId it MUST respond to the CONNECT Packet with a CONNACK return code 0x02
      * (Identifier rejected) and then close the Network Connection [MQTT-3.1.3-9].
      */
-    client_id: String,
+    pub client_id: String,
 
-    will: Option<Will>,
+    pub will: Option<Will>,
 
     /*
      * If the User Name Flag is set to 1, this is the next field in the payload.
@@ -252,7 +252,12 @@ impl ConnectPacket {
             let qos = conn_flags.will_qos();
             let retain = conn_flags.will_retain();
 
-            will = Some(Will::new(topic, message, qos, retain))
+            will = Some(Will::new(
+                TopicName::from_str(topic.as_str())?,
+                message,
+                qos,
+                retain,
+            ))
         }
 
         let username: Option<String>;
@@ -325,7 +330,7 @@ impl ConnectPacket {
         encode_utf8(&mut bytes, &self.client_id)?;
 
         if let Some(will) = &self.will {
-            encode_utf8(&mut bytes, &will.will_topic)?;
+            encode_utf8(&mut bytes, &will.will_topic.clone().to_string())?;
             encode_utf8(&mut bytes, &will.will_message)?;
         }
 
@@ -341,8 +346,6 @@ impl ConnectPacket {
     }
 
     pub fn new(
-        protocol: Protocol,
-        level: u8,
         is_clean_session: bool,
         keep_alive: u16,
         client_id: String,
@@ -374,8 +377,8 @@ impl ConnectPacket {
         }
 
         return Self {
-            protocol,
-            level,
+            protocol: Protocol::MQTT,
+            level: 4,
             conn_flags,
             keep_alive,
             client_id,
@@ -384,9 +387,21 @@ impl ConnectPacket {
             password,
         };
     }
+
+    pub fn client_id(&self) -> &'_ str {
+        return &self.client_id;
+    }
+
+    pub fn will_retain(&self) -> bool {
+        return self.conn_flags.will_retain();
+    }
+
+    pub fn clean_session(&self) -> bool {
+        return self.conn_flags.clean_session();
+    }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Will {
     // prefixing the fields with will may seem verbose, but it adds clarity when dealing with the struct at a higher level.
     // For instance the will_topic, may not be the same as the PUBLISH topic being sent on the connection
@@ -395,7 +410,7 @@ pub struct Will {
      * If the Will Flag is set to 1, the Will Topic is the next field in the payload.
      * The Will Topic MUST be a UTF-8 encoded string as defined in Section 1.5.3 [MQTT-3.1.3-10].
      */
-    will_topic: String,
+    will_topic: TopicName,
 
     /*
      * If the Will Flag is set to 1 the Will Message is the next field in the payload.
@@ -440,7 +455,7 @@ pub struct Will {
 
 impl Will {
     pub fn new(
-        will_topic: String,
+        will_topic: TopicName,
         will_message: String,
         will_qos: QosLevel,
         will_retain: bool,
@@ -451,6 +466,22 @@ impl Will {
             will_qos,
             will_retain,
         };
+    }
+
+    pub fn will_topic(&self) -> &TopicName {
+        return &self.will_topic;
+    }
+
+    pub fn will_message(&self) -> String {
+        return self.will_message.clone();
+    }
+
+    pub fn will_qos(&self) -> QosLevel {
+        return self.will_qos;
+    }
+
+    pub fn will_retain(&self) -> bool {
+        return self.will_retain;
     }
 }
 
@@ -649,27 +680,18 @@ impl Protocol {
 #[cfg(test)]
 mod connect_packet {
 
-    use crate::v3::MqttPacket;
+    use crate::v3::{FixedHeader, MqttPacket};
 
-    use super::{ConnectPacket, Protocol};
+    use super::ConnectPacket;
 
     #[test]
     fn serialize_deserialize() {
-        let packet = ConnectPacket::new(
-            Protocol::MQTT,
-            4,
-            true,
-            100,
-            "id_1".to_string(),
-            None,
-            None,
-            None,
-        );
-
-        let packet_test = packet.clone();
+        let packet = ConnectPacket::new(true, 100, "id_1".to_string(), None, None, None);
         let buf = packet.encode().expect("Could not encode packet.");
-        let packet = MqttPacket::decode(buf).expect("Could not decode packet.");
 
-        assert_eq!(packet, MqttPacket::Connect(packet_test));
+        let (f_header, buf) = FixedHeader::decode(buf).unwrap();
+        let packet_de = MqttPacket::decode(f_header, buf).expect("Could not decode packet");
+
+        assert_eq!(packet_de, MqttPacket::Connect(packet));
     }
 }

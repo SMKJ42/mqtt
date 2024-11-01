@@ -1,7 +1,0 @@
-[package]
-name = "mqtt_server"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-mqtt-packets = { path = "../mqtt-packets" }

@@ -12,6 +12,14 @@ impl PacketError {
     pub fn new(kind: PacketErrorKind, message: String) -> Self {
         return Self { kind, message };
     }
+
+    pub fn kind(&self) -> PacketErrorKind {
+        return self.kind;
+    }
+
+    pub fn message(&self) -> &String {
+        return &self.message;
+    }
 }
 
 impl Display for PacketError {
@@ -20,7 +28,7 @@ impl Display for PacketError {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Copy, PartialEq)]
 pub enum PacketErrorKind {
     ProtocolName,
     ProtocolLevel,

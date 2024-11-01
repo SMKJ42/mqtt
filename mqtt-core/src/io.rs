@@ -1,9 +1,6 @@
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 
-use crate::{
-    err::{PacketError, PacketErrorKind},
-    v3::MqttPacket,
-};
+use crate::err::{PacketError, PacketErrorKind};
 
 /*
  * MQTT v3.1.1 standard, Remaining length field on the fixed header can be at
@@ -176,10 +173,6 @@ pub fn decode_packet_length<'a>(mut bytes: Bytes) -> Result<(usize, Bytes), Pack
 
         return Ok((len, bytes));
     }
-}
-
-pub fn decode_packet(buf: &[u8]) -> Result<MqttPacket, PacketError> {
-    MqttPacket::decode(Bytes::copy_from_slice(buf))
 }
 
 // pub fn serialize_packet(packet: MqttPacket, int: u32) -> Vec<u8> {
