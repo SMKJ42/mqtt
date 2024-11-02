@@ -67,7 +67,7 @@ pub fn encode_bytes(bytes: &mut BytesMut, val: &[u8]) -> Result<(), PacketError>
     return Ok(());
 }
 
-pub fn decode_utf8(mut bytes: Bytes) -> Result<(String, Bytes), PacketError> {
+pub fn decode_utf8(mut bytes: &mut Bytes) -> Result<(String, &mut Bytes), PacketError> {
     let len: u16;
     (len, bytes) = decode_u16_len(bytes)?;
 
@@ -96,7 +96,7 @@ pub fn decode_utf8(mut bytes: Bytes) -> Result<(String, Bytes), PacketError> {
     }
 }
 
-pub fn decode_bytes(mut bytes: Bytes) -> Result<(Bytes, Bytes), PacketError> {
+pub fn decode_bytes(mut bytes: &mut Bytes) -> Result<(Bytes, &mut Bytes), PacketError> {
     let len: u16;
     (len, bytes) = decode_u16_len(bytes)?;
 
@@ -115,7 +115,7 @@ pub fn decode_bytes(mut bytes: Bytes) -> Result<(Bytes, Bytes), PacketError> {
     return Ok((slice, bytes));
 }
 
-pub fn decode_u16_len(mut bytes: Bytes) -> Result<(u16, Bytes), PacketError> {
+pub fn decode_u16_len(bytes: &mut Bytes) -> Result<(u16, &mut Bytes), PacketError> {
     let len = bytes.get_u16();
 
     if len as usize > bytes.len() {
@@ -131,7 +131,7 @@ pub fn decode_u16_len(mut bytes: Bytes) -> Result<(u16, Bytes), PacketError> {
     return Ok((len, bytes));
 }
 
-pub fn decode_packet_length<'a>(mut bytes: Bytes) -> Result<(usize, Bytes), PacketError> {
+pub fn decode_packet_length<'a>(bytes: &mut Bytes) -> Result<(usize, &mut Bytes), PacketError> {
     let mut c: u8;
     let mut mult = 1;
     let mut len: usize = 0;
@@ -205,10 +205,9 @@ mod io_test {
     fn decode_length() {
         let buf: &[u8] = &[255, 255, 255, 127];
         let mut_bytes = BytesMut::from(buf);
+        let mut bytes = Bytes::from(mut_bytes);
 
-        let bytes = Bytes::from(mut_bytes);
-
-        let res = decode_packet_length(bytes);
+        let res = decode_packet_length(&mut bytes);
 
         assert!(res.is_ok());
 
@@ -217,9 +216,9 @@ mod io_test {
         assert_eq!(len, (128 as usize).pow(4) - 1);
 
         let buf: &[u8] = &[128, 128, 128, 128];
-        let bytes = Bytes::from(buf);
+        let mut bytes = Bytes::from(buf);
 
-        let out = decode_packet_length(bytes);
+        let out = decode_packet_length(&mut bytes);
 
         assert!(out.is_err());
     }

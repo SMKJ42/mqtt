@@ -218,7 +218,7 @@ pub struct ConnectPacket {
 }
 
 impl ConnectPacket {
-    pub fn decode(mut bytes: Bytes) -> Result<Self, PacketError> {
+    pub fn decode(mut bytes: &mut Bytes) -> Result<Self, PacketError> {
         // first byte is used to obtain the packet type.
         let protocol: Protocol;
         (protocol, bytes) = Protocol::from_bytes(bytes)?;
@@ -651,7 +651,7 @@ pub enum Protocol {
 }
 
 impl Protocol {
-    pub fn from_bytes(bytes: Bytes) -> Result<(Self, Bytes), PacketError> {
+    pub fn from_bytes(bytes: &mut Bytes) -> Result<(Self, &mut Bytes), PacketError> {
         let (protocol_name, bytes) = decode_utf8(bytes)?;
 
         match &protocol_name.as_str() {
@@ -687,10 +687,10 @@ mod connect_packet {
     #[test]
     fn serialize_deserialize() {
         let packet = ConnectPacket::new(true, 100, "id_1".to_string(), None, None, None);
-        let buf = packet.encode().expect("Could not encode packet.");
+        let mut buf = packet.encode().unwrap();
 
-        let (f_header, buf) = FixedHeader::decode(buf).unwrap();
-        let packet_de = MqttPacket::decode(f_header, buf).expect("Could not decode packet");
+        let (f_header, mut buf) = FixedHeader::decode(&mut buf).unwrap();
+        let packet_de = MqttPacket::decode(f_header, &mut buf).expect("Could not decode packet");
 
         assert_eq!(packet_de, MqttPacket::Connect(packet));
     }

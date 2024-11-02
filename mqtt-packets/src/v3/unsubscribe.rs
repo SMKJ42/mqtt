@@ -21,7 +21,7 @@ impl UnsubscribePacket {
         return Self { packet_id, filters };
     }
 
-    pub fn decode(mut bytes: Bytes) -> Result<Self, PacketError> {
+    pub fn decode(mut bytes: &mut Bytes) -> Result<Self, PacketError> {
         let packet_id = bytes.get_u16();
 
         let mut filters = Vec::new();
@@ -62,6 +62,10 @@ impl UnsubscribePacket {
 
         return Ok(bytes.into());
     }
+
+    pub fn filters(&self) -> &Vec<TopicFilter> {
+        return &self.filters;
+    }
 }
 
 #[cfg(test)]
@@ -75,10 +79,9 @@ mod test {
     #[test]
     fn unsubscribe_serialize_deserialize() {
         let packet = UnsubscribePacket::new(1234, vec![TopicFilter::from_str("test").unwrap()]);
+        let mut buf = packet.encode().unwrap();
 
-        let buf = packet.encode().unwrap();
-
-        let (f_header, buf) = FixedHeader::decode(buf).unwrap();
+        let (f_header, buf) = FixedHeader::decode(&mut buf).unwrap();
         let packet_de = MqttPacket::decode(f_header, buf).expect("Could not decode packet");
 
         assert_eq!(packet_de, MqttPacket::Unsubscribe(packet));

@@ -48,9 +48,9 @@ mod test {
     #[test]
     fn pingreq_serialize_deserialize() {
         let packet = PingReqPacket::new();
-        let buf = packet.encode();
+        let mut buf = packet.encode();
 
-        let (f_header, buf) = FixedHeader::decode(buf).unwrap();
+        let (f_header, buf) = FixedHeader::decode(&mut buf).unwrap();
         let packet_de = MqttPacket::decode(f_header, buf).expect("Could not decode packet");
 
         assert_eq!(packet_de, MqttPacket::PingReq(packet));

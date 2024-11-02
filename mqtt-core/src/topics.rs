@@ -9,7 +9,7 @@ use crate::{
 pub struct TopicFilter(Vec<TopicToken>);
 
 impl TopicFilter {
-    pub fn decode(bytes: Bytes) -> Result<(Self, Bytes), PacketError> {
+    pub fn decode(bytes: &mut Bytes) -> Result<(Self, &mut Bytes), PacketError> {
         let (string, bytes) = decode_utf8(bytes)?;
         let tokens = Self::from_str(string.as_str())?;
         return Ok((tokens, bytes));
@@ -80,7 +80,7 @@ impl TopicFilter {
 pub struct TopicName(Vec<TopicToken>);
 
 impl TopicName {
-    pub fn decode(bytes: Bytes) -> Result<(Self, Bytes), PacketError> {
+    pub fn decode(bytes: &mut Bytes) -> Result<(Self, &mut Bytes), PacketError> {
         let (string, bytes) = decode_utf8(bytes)?;
         let tokens = Self::from_str(string.as_str())?;
         return Ok((tokens, bytes));

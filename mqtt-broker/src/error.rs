@@ -1,4 +1,6 @@
 pub mod client {
+    use std::fmt::Error;
+
     use mqtt_core::err::{PacketError, PacketErrorKind};
     use tokio::io;
 
@@ -20,6 +22,14 @@ pub mod client {
     impl ClientError {
         pub fn new(kind: ErrorKind, message: String) -> Self {
             return Self { kind, message };
+        }
+
+        pub fn kind(&self) -> &ErrorKind {
+            return &self.kind;
+        }
+
+        pub fn message(&self) -> &str {
+            return &self.message;
         }
     }
 
@@ -49,12 +59,29 @@ pub mod client {
 }
 
 pub mod server {
+    #[derive(Debug, Clone)]
     pub struct ServerError {
         kind: ErrorKind,
         message: String,
     }
 
+    #[derive(Debug, Copy, Clone)]
     pub enum ErrorKind {
         BroadcastError,
+        FullMailbox,
+    }
+
+    impl ServerError {
+        pub fn new(kind: ErrorKind, message: String) -> Self {
+            Self { kind, message }
+        }
+
+        pub fn kind(&self) -> ErrorKind {
+            return self.kind;
+        }
+
+        pub fn message(&self) -> &str {
+            return &self.message;
+        }
     }
 }

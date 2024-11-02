@@ -28,7 +28,7 @@ impl SubAckPacket {
         return Self { packet_id, payload };
     }
 
-    pub fn decode(mut bytes: Bytes) -> Result<Self, PacketError> {
+    pub fn decode(bytes: &mut Bytes) -> Result<Self, PacketError> {
         let packet_id = bytes.get_u16();
 
         let mut payload: Vec<TopicFilterResponse> = Vec::new();
@@ -105,9 +105,9 @@ mod test {
     #[test]
     fn suback_serialize_deserialize() {
         let packet = SubAckPacket::new(1234, vec![TopicFilterResponse::QOS(QosLevel::AtLeastOnce)]);
-        let buf = packet.encode().unwrap();
+        let mut buf = packet.encode().unwrap();
 
-        let (f_header, buf) = FixedHeader::decode(buf).unwrap();
+        let (f_header, buf) = FixedHeader::decode(&mut buf).unwrap();
         let packet_de = MqttPacket::decode(f_header, buf).expect("Could not decode packet");
 
         assert_eq!(packet_de, MqttPacket::SubAck(packet));

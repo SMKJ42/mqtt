@@ -1,4 +1,14 @@
-use error::client::{self, ClientError};
+mod error;
+mod mailbox;
+mod session;
+mod topic;
+
+use bytes::BytesMut;
+use error::{
+    client::{self, ClientError},
+    server,
+};
+use mailbox::{Mail, Mailbox};
 use mqtt_core::{
     qos::QosLevel,
     topics::{TopicFilter, TopicName},
@@ -10,19 +20,15 @@ use mqtt_packets::v3::{
     MqttPacket,
 };
 use session::{read_raw_packet, ActiveSession, DisconnectedSessions};
-use std::sync::Arc;
-use tokio::sync::broadcast::{error::SendError, Receiver};
+use std::{io, sync::Arc};
+use tokio::sync::broadcast::error::SendError;
 use tokio::sync::Mutex;
 use tokio::{
-    io::AsyncWriteExt,
+    io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
     sync::broadcast,
 };
 use topic::ServerTopics;
-
-mod error;
-mod session;
-mod topic;
 
 struct MqttServer {
     topics: Arc<Mutex<ServerTopics>>,
@@ -30,6 +36,7 @@ struct MqttServer {
 }
 
 impl MqttServer {
+    /// Creates a new MqttServer instance holding a mutex to topics and a mutex to disconnected sessions.
     fn new() -> Self {
         MqttServer {
             topics: Arc::new(Mutex::new(ServerTopics::new())),
@@ -37,6 +44,7 @@ impl MqttServer {
         }
     }
 
+    /// returns an option to the channels receiver.
     async fn get_topic_channel(
         &self,
         topic_name: &TopicName,
@@ -70,31 +78,44 @@ impl MqttServer {
         }
     }
 
+    /// Subscribe to a topic.
+    ///
+    /// This function forwards any retained messages that the server holds for that topic,
+    /// and returns a mailbox with receivers to the subscriptions.
+    ///
+    /// ## Error
+    ///
+    /// It will error if the retained messages cannot be written to the stream
     async fn subscribe(
         &self,
         mut stream: &mut TcpStream,
         topic_filter: &TopicFilter,
-    ) -> Result<Vec<broadcast::Receiver<Arc<PublishPacket>>>, ClientError> {
+    ) -> Result<Mailbox, ClientError> {
         let topics = self.topics.lock().await;
-        let mut channel_handles = vec![];
+
+        let mut mailbox = Mailbox::new();
 
         for (topic_name, topic) in topics.iter() {
             if topic_name == topic_filter {
-                let (channel, retained_messages) = topic.subscribe();
-                channel_handles.push(channel);
+                let (receiver, retained_messages) = topic.subscribe();
+                mailbox.queue(Mail::new(topic_name.clone(), receiver));
                 retained_messages.publish(&mut stream).await?
             }
         }
-        return Ok(channel_handles);
+        return Ok(mailbox);
     }
 }
 
 /// Handle a single TCP client connection event loop.
-async fn handle_client(mut stream: TcpStream, server: Arc<MqttServer>) -> Result<(), ClientError> {
-    let connect_packet = read_init_packet(&mut stream, &server.dc_sessions).await?;
+async fn handle_client(
+    mut stream: TcpStream,
+    mailbox: &mut Mailbox,
+    server: Arc<MqttServer>,
+) -> Result<(), ClientError> {
+    let connect_packet = read_init_packet(&server, &mut stream, mailbox).await?;
 
     if let Some(mut session) = connect_packet {
-        match handle_client_connection(stream, &server, &mut session).await {
+        match handle_client_connection(stream, &server, &mut session, mailbox).await {
             Ok(()) => return Ok(()),
             Err(err) => {
                 let is_retained = session.will_retain();
@@ -131,28 +152,57 @@ async fn handle_client_connection(
     mut stream: TcpStream,
     server: &Arc<MqttServer>,
     session: &mut ActiveSession,
+    mailbox: &mut Mailbox,
 ) -> Result<(), ClientError> {
-    let mut client_mailbox: Vec<Receiver<Arc<PublishPacket>>> = vec![];
     loop {
-        let received = read_raw_packet(&mut stream).await?;
+        let mut buf = BytesMut::new();
 
-        if session.timed_out() {
-            return Ok(());
-        } else {
-            session.update_last_read();
+        match stream.try_read(&mut buf) {
+            Ok(num_bytes) => {
+                let packets = read_raw_packet(&mut buf.into()).await?;
+
+                if session.timed_out() {
+                    return Ok(());
+                } else {
+                    session.update_last_read();
+                }
+                handle_packet(server, &mut stream, mailbox, packets).await?
+            }
+
+            Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
+                return Ok(());
+            }
+            Err(err) => return Err(err.into()),
         }
 
-        match received {
+        // Example: treat all input as publish to the topic
+
+        for mail in mailbox.mail_mut() {
+            // read all mail in this receiver.
+            forward_mail(mail, &mut stream).await?;
+        }
+    }
+}
+
+async fn handle_packet(
+    server: &Arc<MqttServer>,
+    stream: &mut TcpStream,
+    mailbox: &mut Mailbox,
+    packets: Vec<MqttPacket>,
+) -> Result<(), ClientError> {
+    for mqtt_packet in packets {
+        match mqtt_packet {
             MqttPacket::Subscribe(packet) => {
-                handle_subscribe(
-                    &server,
-                    &mut stream,
-                    &mut client_mailbox,
-                    packet.topic_filters(),
-                )
-                .await;
+                handle_subscribe(&server, stream, mailbox, packet.topic_filters()).await;
             }
             MqttPacket::Publish(packet) => {
+                if packet.retain() {
+                    let mut topics = server.topics.lock().await;
+                    if let Some(topic) = topics.topic_mut(packet.topic()) {
+                        topic.retain_message(Arc::new(packet.clone()));
+                    }
+                }
+
                 let _ = server
                     .publish(&packet.topic().clone(), Arc::new(packet))
                     .await;
@@ -179,8 +229,9 @@ async fn handle_client_connection(
                 todo!();
             }
             MqttPacket::Unsubscribe(packet) => {
-                // update mailbox
-                todo!();
+                for filter in packet.filters() {
+                    mailbox.remove(filter);
+                }
             }
             MqttPacket::Disconnect(packet) => {
                 return Ok(());
@@ -193,13 +244,75 @@ async fn handle_client_connection(
                 ));
             }
         }
-        // Example: treat all input as publish to the topic
+    }
+    return Ok(());
+}
 
-        for receiver in client_mailbox.iter_mut() {
-            while let Ok(message) = receiver.recv().await {
-                let packet = message.encode()?;
-                match stream.write_all(&packet).await {
-                    Ok(_) => {}
+pub async fn forward_mail(mail: &mut Mail, stream: &mut TcpStream) -> Result<(), ClientError> {
+    loop {
+        match mail.recv() {
+            Ok(message) => match message {
+                Some(message) => {
+                    let packet = message.encode()?;
+                    // forward received mail to the client.
+                    if let Err(err) = stream.write_all(&packet).await {
+                        return Err(ClientError::new(
+                            err.into(),
+                            String::from("Could not write to client's stream."),
+                        ));
+                    } else {
+                        // read mail until it is empty.
+                        continue;
+                    }
+                }
+                // no more mail in the receiver, move on to the next receiver.
+                None => return Ok(()),
+            },
+            Err(err) => {
+                eprintln!("{:?}", err);
+                match err.kind() {
+                    // if we have a full mailbox, retry again. We will drop some packets,
+                    // but if QoS > 0 the client will initiate a retry attempt.
+                    server::ErrorKind::FullMailbox => continue,
+                    server::ErrorKind::BroadcastError => {
+                        todo!("create a logger");
+                    }
+                };
+            }
+        }
+    }
+}
+
+/// Reads the initial packet sent from the client
+///
+/// The first packet from the client should be a CONNECT packet or a PINGREQ packet,
+/// if it is neither the function will return an error.
+///
+/// if a PINGREQ packet is the first packet sent, the function will return an Ok(None) value.
+///
+/// If a CONNECT packet is the first packet sent, the function will return an Ok(Session) value.
+///
+/// This function is part of the main event loop of the client's connection instance.
+///
+
+async fn read_init_packet(
+    server: &Arc<MqttServer>,
+    stream: &mut TcpStream,
+    mailbox: &mut Mailbox,
+) -> Result<Option<ActiveSession>, ClientError> {
+    let mut buf = BytesMut::new();
+
+    stream.read_buf(&mut buf).await?;
+
+    let mut packets = read_raw_packet(&mut buf.into()).await?.into_iter();
+
+    let session: ActiveSession;
+
+    if let Some(packet) = packets.next() {
+        match packet {
+            MqttPacket::PingReq(_) => {
+                match stream.write_all(&mut PingRespPacket::new().encode()).await {
+                    Ok(_) => return Ok(None),
                     Err(err) => {
                         return Err(ClientError::new(
                             err.into(),
@@ -208,69 +321,78 @@ async fn handle_client_connection(
                     }
                 }
             }
-        }
-    }
-}
 
-async fn read_init_packet(
-    stream: &mut TcpStream,
-    sessions: &Arc<Mutex<DisconnectedSessions>>,
-) -> Result<Option<ActiveSession>, ClientError> {
-    let packet = read_raw_packet(stream).await?;
+            MqttPacket::Connect(packet) => {
+                let mut sessions = server.dc_sessions.lock().await;
 
-    match packet {
-        MqttPacket::PingReq(_) => {
-            match stream.write_all(&mut PingRespPacket::new().encode()).await {
-                Ok(_) => return Ok(None),
-                Err(err) => Err(ClientError::new(
-                    err.into(),
-                    String::from("Could not write to client's stream."),
-                )),
-            }
-        }
+                // clear the client's prior history and shift dc_session into active session.
+                if let Some(dc_session) = sessions.remove_session(packet.client_id()) {
+                    // Client did NOT disconnect gracefully, send any stored packets.
+                    if packet.clean_session() {
+                        stream
+                            .write_all(
+                                &ConnAckPacket::new(true, ConnectReturnCode::Accept).encode(),
+                            )
+                            .await?;
+                        session = dc_session.into_active(&packet);
+                    } else {
+                        // It is the first time the client is connecting, or the client disconnected gracefully.
+                        stream
+                            .write_all(
+                                &ConnAckPacket::new(false, ConnectReturnCode::Accept).encode(),
+                            )
+                            .await?;
 
-        MqttPacket::Connect(packet) => {
-            let mut sessions = sessions.lock().await;
-
-            // clear the client's prior history and shift dc_session into active session.
-            if let Some(session) = sessions.remove_session(packet.client_id()) {
-                // Client did NOT disconnect gracefully, send any stored packets.
-                if packet.clean_session() {
+                        session = ActiveSession::from_packet(packet);
+                    }
+                } else {
+                    // It is the first time the client is connecting, or the client disconnected gracefully.
                     stream
-                        .write_all(&ConnAckPacket::new(true, ConnectReturnCode::Accept).encode())
+                        .write_all(&ConnAckPacket::new(false, ConnectReturnCode::Accept).encode())
                         .await?;
-                    return Ok(Some(session.into_active(&packet)));
+
+                    session = ActiveSession::from_packet(packet);
                 }
             }
-            // It is the first time the client is connecting, or the client disconnected gracefully.
-            stream
-                .write_all(&ConnAckPacket::new(false, ConnectReturnCode::Accept).encode())
-                .await?;
-
-            return Ok(Some(ActiveSession::from_packet(packet)));
+            _ => {
+                return Err(ClientError::new(
+                    client::ErrorKind::ProtocolError,
+                    String::from(
+                        "Cannot initialize connection without first receiving a CONNECT packet",
+                    ),
+                ))
+            }
         }
-        _ => {
-            return Err(ClientError::new(
-                client::ErrorKind::ProtocolError,
-                String::from(
-                    "Cannot initialize connection without first receiving a CONNECT packet",
-                ),
-            ))
-        }
+    } else {
+        return Err(ClientError::new(
+            client::ErrorKind::ProtocolError,
+            String::from("Cannot initialize connection without first receiving a CONNECT packet"),
+        ));
     }
+
+    handle_packet(&server, stream, mailbox, packets.collect()).await?;
+
+    return Ok(Some(session));
 }
 
+/// Handles updating the server state with new subscriptions and writing retained messages to the clients stream,
+///
+/// This function is part of the main event loop of the client's connection instance.
+///
+/// ## Error
+///
+/// It will error if the retained messages cannot be written to the stream
 async fn handle_subscribe(
     server: &Arc<MqttServer>,
     stream: &mut TcpStream,
-    mailbox: &mut Vec<Receiver<Arc<PublishPacket>>>,
+    mailbox: &mut Mailbox,
     filters: Vec<(TopicFilter, QosLevel)>,
 ) {
     for (filter, _qos) in filters {
         let new_topics_chunk = server.subscribe(stream, &filter).await;
         match new_topics_chunk {
             Ok(mut new_topics_chunk) => {
-                mailbox.append(&mut new_topics_chunk);
+                mailbox.combine(&mut new_topics_chunk);
             }
             Err(err) => {
                 todo!()
@@ -290,10 +412,13 @@ async fn main() -> tokio::io::Result<()> {
     loop {
         let (stream, addr) = listener.accept().await?;
         println!("New connection: {}", addr);
-        // Handle each client connection
+
         let server_clone = Arc::clone(&server);
+        // Handle each client connection
         tokio::spawn(async move {
-            if let Err(err) = handle_client(stream, server_clone).await {
+            let mut mailbox = Mailbox::new();
+
+            if let Err(err) = handle_client(stream, &mut mailbox, server_clone).await {
                 eprintln!(
                     "Server error handling client, closing connection:\n{:?}",
                     err

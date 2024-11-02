@@ -48,7 +48,7 @@ impl ConnAckPacket {
         };
     }
 
-    pub fn decode(mut bytes: Bytes) -> Result<Self, PacketError> {
+    pub fn decode(bytes: &mut Bytes) -> Result<Self, PacketError> {
         let session_present_byte = bytes.get_u8();
 
         if (session_present_byte & 0b1111_1110) != 0 {
@@ -132,10 +132,10 @@ mod test {
     #[test]
     fn connack_serialize_deserialize() {
         let packet = ConnAckPacket::new(true, super::ConnectReturnCode::Accept);
-        let buf = packet.encode();
+        let mut buf = packet.encode();
 
-        let (f_header, buf) = FixedHeader::decode(buf).unwrap();
-        let packet_de = MqttPacket::decode(f_header, buf).expect("Could not decode packet");
+        let (f_header, mut buf) = FixedHeader::decode(&mut buf).unwrap();
+        let packet_de = MqttPacket::decode(f_header, &mut buf).expect("Could not decode packet");
 
         assert_eq!(packet_de, MqttPacket::ConnAck(packet));
     }

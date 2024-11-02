@@ -17,7 +17,7 @@ impl PubRelPacket {
         return Self { id };
     }
 
-    pub fn decode(f_header: FixedHeader, mut bytes: Bytes) -> Result<Self, PacketError> {
+    pub fn decode(f_header: FixedHeader, bytes: &mut Bytes) -> Result<Self, PacketError> {
         if f_header.len != 2 {
             return Err(PacketError::new(
                 PacketErrorKind::MalformedLength,
@@ -53,10 +53,9 @@ mod test {
     #[test]
     fn pubrel_serialize_deserialize() {
         let packet = PubRelPacket::new(1234);
+        let mut buf = packet.encode();
 
-        let buf = packet.encode();
-
-        let (f_header, buf) = FixedHeader::decode(buf).unwrap();
+        let (f_header, buf) = FixedHeader::decode(&mut buf).unwrap();
         let packet_de = MqttPacket::decode(f_header, buf).expect("Could not decode packet");
 
         assert_eq!(packet_de, MqttPacket::PubRel(packet));

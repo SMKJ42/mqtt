@@ -89,8 +89,8 @@ impl PublishPacket {
         return &self.topic_name;
     }
 
-    pub fn decode(f_header: FixedHeader, bytes: Bytes) -> Result<Self, PacketError> {
-        let (topic_name_in, mut bytes) = decode_utf8(bytes)?;
+    pub fn decode(f_header: FixedHeader, bytes: &mut Bytes) -> Result<Self, PacketError> {
+        let (topic_name_in, bytes) = decode_utf8(bytes)?;
         let topic_name = TopicName::from_str(topic_name_in.as_str())?;
 
         let flags = PublishFixedHeaderFlags::from_byte(f_header.flags.as_byte());
@@ -105,7 +105,7 @@ impl PublishPacket {
             packet_id,
             flags,
             topic_name,
-            payload: bytes,
+            payload: bytes.clone(),
         });
     }
 
@@ -325,9 +325,9 @@ mod test {
             TopicName::from_str("this/is/a/test").expect("Could not create topic name"),
             Bytes::from_iter([117]),
         );
-        let buf = packet.encode().unwrap();
+        let mut buf = packet.encode().unwrap();
 
-        let (f_header, buf) = FixedHeader::decode(buf).unwrap();
+        let (f_header, buf) = FixedHeader::decode(&mut buf).unwrap();
         let packet_de = MqttPacket::decode(f_header, buf).expect("Could not decode packet");
 
         assert_eq!(packet_de, MqttPacket::Publish(packet));
@@ -342,9 +342,9 @@ mod test {
         );
         packet.set_qos_atleastonce(1234);
 
-        let buf = packet.encode().unwrap();
+        let mut buf = packet.encode().unwrap();
 
-        let (f_header, buf) = FixedHeader::decode(buf).unwrap();
+        let (f_header, buf) = FixedHeader::decode(&mut buf).unwrap();
         let packet_de = MqttPacket::decode(f_header, buf).expect("Could not decode packet");
 
         assert_eq!(packet_de, MqttPacket::Publish(packet));

@@ -35,6 +35,14 @@ impl ServerTopics {
         }
     }
 
+    pub fn topic(&self, topic_name: &TopicName) -> Option<&ServerTopic> {
+        return self.topics.get(topic_name);
+    }
+
+    pub fn topic_mut(&mut self, topic_name: &TopicName) -> Option<&mut ServerTopic> {
+        return self.topics.get_mut(topic_name);
+    }
+
     pub fn get_retained(&self) {}
 
     pub fn iter(&self) -> hash_map::Iter<'_, TopicName, ServerTopic> {
@@ -57,6 +65,15 @@ impl ServerTopic {
     pub fn retained_messages(&self) -> &RetainedMessages {
         return &self.retained_messages;
     }
+
+    pub fn retained_messages_mut(&mut self) -> &mut RetainedMessages {
+        return &mut self.retained_messages;
+    }
+
+    pub fn retain_message(&mut self, packet: Arc<PublishPacket>) {
+        return self.retained_messages.retain_message(packet);
+    }
+
     pub fn stream(&self) -> &broadcast::Sender<Arc<PublishPacket>> {
         return &self.stream;
     }

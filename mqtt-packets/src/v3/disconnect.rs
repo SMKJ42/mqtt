@@ -44,10 +44,10 @@ mod test {
     #[test]
     fn disconnect_serialize_deserialize() {
         let packet = DisconnectPacket::new();
-        let buf = packet.encode();
+        let mut buf = packet.encode();
 
-        let (f_header, buf) = FixedHeader::decode(buf).unwrap();
-        let packet_de = MqttPacket::decode(f_header, buf).expect("Could not decode packet");
+        let (f_header, mut buf) = FixedHeader::decode(&mut buf).unwrap();
+        let packet_de = MqttPacket::decode(f_header, &mut buf).expect("Could not decode packet");
 
         assert_eq!(packet_de, MqttPacket::Disconnect(packet));
     }

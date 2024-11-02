@@ -57,7 +57,7 @@ pub enum MqttPacket {
 }
 
 impl MqttPacket {
-    pub fn decode(f_header: FixedHeader, mut bytes: Bytes) -> Result<Self, PacketError> {
+    pub fn decode(f_header: FixedHeader, bytes: &mut Bytes) -> Result<Self, PacketError> {
         return match f_header.type_ {
             PacketType::CONNACK => Ok(Self::ConnAck(ConnAckPacket::decode(bytes)?)),
             PacketType::CONNECT => Ok(Self::Connect(ConnectPacket::decode(bytes)?)),
@@ -104,12 +104,12 @@ pub struct FixedHeader {
 }
 
 impl FixedHeader {
-    pub fn decode(mut bytes: Bytes) -> Result<(Self, Bytes), PacketError> {
+    pub fn decode(bytes: &mut Bytes) -> Result<(Self, &mut Bytes), PacketError> {
         let byte = bytes.get_u8();
         let type_ = PacketType::try_from(byte)?;
         let flags = HeaderFlags::try_from((type_, byte))?;
 
-        let (len, bytes) = decode_packet_length(bytes.clone())?;
+        let (len, bytes) = decode_packet_length(bytes)?;
 
         if bytes.remaining() > len {
             return Err(PacketError::new(
@@ -119,15 +119,16 @@ impl FixedHeader {
                     bytes.remaining()
                 ),
             ));
-        } else if bytes.remaining() < len {
-            return Err(PacketError::new(
-                PacketErrorKind::MalformedLength,
-                format!(
-                    "Actual packet length: {} UNDERFLOWED encoded packet length: {len} ",
-                    bytes.remaining()
-                ),
-            ));
         }
+        //  else if bytes.remaining() < len {
+        //     return Err(PacketError::new(
+        //         PacketErrorKind::MalformedLength,
+        //         format!(
+        //             "Actual packet length: {} UNDERFLOWED encoded packet length: {len} ",
+        //             bytes.remaining()
+        //         ),
+        //     ));
+        // }
 
         match type_ {
             // Check for packets with fixed length of 2.

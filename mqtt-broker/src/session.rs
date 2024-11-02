@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::Arc, time::Instant};
 
-use bytes::{Bytes, BytesMut};
+use bytes::{Buf, Bytes};
 use mqtt_core::topics::TopicFilter;
 use mqtt_packets::{
     decode_packet,
@@ -12,7 +12,7 @@ use mqtt_packets::{
         FixedHeader, MqttPacket,
     },
 };
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
 
 use crate::error::client::ClientError;
@@ -196,82 +196,6 @@ impl DisconnectedSession {
     pub fn into_active(&self, packet: &ConnectPacket) -> ActiveSession {
         return ActiveSession::from((self, packet));
     }
-
-    // pub fn push_topic_filter(&mut self, filter: TopicFilter) {
-    //     self.topic_filters.push(filter);
-    // }
-
-    // pub async fn publish_will(&self, subs: Subscribers) -> Result<(), MqttServerError> {
-    //     match &self.will {
-    //         Some(will) => {
-    //             let mut will_packet = PublishPacket::new(
-    //                 will.will_topic().clone(),
-    //                 Bytes::from(will.will_topic().clone().to_string()),
-    //             );
-    //             match will.will_qos() {
-    //                 QosLevel::AtMostOnce => will_packet.set_qos_atmostonce(),
-    //                 QosLevel::AtLeastOnce => {
-    //                     todo!("Need to create a packet_id generator")
-    //                     // will_packet.set_qos_atleastonce(packet_id);
-    //                 }
-    //                 QosLevel::ExactlyOnce => {
-    //                     todo!("Need to create a packet_id generator")
-
-    //                     // will_packet.set_qos_exactlyonce(packet_id);
-    //                 }
-    //             };
-
-    //             // todo!("Need to create a collection for subscribers.");
-    //             for subscriber in subs {
-    //                 match subscriber.try_lock() {
-    //                     Ok(mut subscriber) => {
-    //                         subscriber.write_packet(MqttPacket::Publish(will_packet.clone()))?;
-    //                     }
-    //                     Err(err) => {
-    //                         todo!()
-    //                     }
-    //                 }
-    //             }
-    //         }
-    //         None => {}
-    //     }
-
-    //     return Ok(());
-    // }
-
-    // pub async fn read_packet(&mut self) -> Result<MqttPacket, MqttServerError> {
-    //     return read_raw_packet(&mut self.stream);
-    // }
-
-    // Subscribers are provided in the case of a failed connection,
-    // that way the connection's will can be published.
-    // pub fn write_packet(&mut self, packet: MqttPacket) -> Result<(), MqttServerError> {
-    //     match packet {
-    //         MqttPacket::Publish(pub_packet) => {
-    //             let mut bytes = pub_packet.encode()?;
-    //             match pub_packet.qos() {
-    //                 QosLevel::AtMostOnce => match self.stream.write_all(&mut bytes) {
-    //                     Ok(_) => return Ok(()),
-    //                     Err(err) => match err.kind() {
-    //                         _ => return Err(err.into()),
-    //                     },
-    //                 },
-    //                 QosLevel::AtLeastOnce => {
-    //                     todo!()
-    //                 }
-    //                 QosLevel::ExactlyOnce => {
-    //                     todo!()
-    //                 }
-    //             }
-    //         }
-    //         _ => match self.stream.write_all(&mut MqttPacket::encode(&packet)?) {
-    //             Ok(_) => return Ok(()),
-    //             Err(err) => match err.kind() {
-    //                 _ => return Err(err.into()),
-    //             },
-    //         },
-    //     }
-    // }
 }
 
 pub struct DisconnectedSessions {
@@ -335,19 +259,29 @@ impl DisconnectedSessions {
     }
 }
 
-pub async fn read_raw_packet(stream: &mut TcpStream) -> Result<MqttPacket, ClientError> {
-    let mut buf = [0; 5];
-    stream.peek(&mut buf).await?;
-    match FixedHeader::decode(Bytes::from_iter(buf)) {
-        Ok((f_header, buf)) => {
-            // size the buf for packet, then read the bytes into the buf.
-            let mut buf = BytesMut::with_capacity(f_header.len() + buf.len());
-            stream.read_exact(&mut buf).await?;
-            match decode_packet(f_header, &buf) {
-                Ok(packet) => return Ok(packet),
+pub async fn read_raw_packet(buf: &mut Bytes) -> Result<Vec<MqttPacket>, ClientError> {
+    let mut packets: Vec<MqttPacket> = vec![];
+
+    loop {
+        if buf.remaining() > 0 {
+            match FixedHeader::decode(buf) {
+                Ok((f_header, buf)) => {
+                    // size the buf for packet, then read the bytes into the buf.
+                    match decode_packet(f_header, buf) {
+                        Ok(packet) => packets.push(packet),
+                        Err(err) => return Err(err.into()),
+                    };
+                }
                 Err(err) => return Err(err.into()),
-            };
+            }
+        } else {
+            break;
         }
-        Err(err) => Err(err.into()),
     }
+
+    return Ok(packets);
+}
+
+fn split_buf(buf: Bytes) -> Vec<Bytes> {
+    loop {}
 }

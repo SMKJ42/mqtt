@@ -43,7 +43,7 @@ impl SubscribePacket {
         return Self { packet_id, payload };
     }
 
-    pub fn decode(mut bytes: Bytes) -> Result<Self, PacketError> {
+    pub fn decode(mut bytes: &mut Bytes) -> Result<Self, PacketError> {
         let packet_id = bytes.get_u16();
 
         let mut payload = Vec::new();
@@ -115,9 +115,9 @@ mod test {
                 QosLevel::AtLeastOnce,
             )],
         );
-        let buf = packet.encode().unwrap();
+        let mut buf = packet.encode().unwrap();
 
-        let (f_header, buf) = FixedHeader::decode(buf).unwrap();
+        let (f_header, buf) = FixedHeader::decode(&mut buf).unwrap();
         let packet_de = MqttPacket::decode(f_header, buf).expect("Could not decode packet");
 
         assert_eq!(packet_de, MqttPacket::Subscribe(packet));
