@@ -106,6 +106,11 @@ impl MqttServer {
             .unwrap()
             .collect::<Result<Vec<_>, _>>()
             .unwrap();
+
+        if certs.len() == 0 {
+            log::warn!("No certificates were provided. Check the ./tls/cert.pem file")
+        }
+
         let key = PrivateKeyDer::from_pem_file("tls/key.pem").unwrap();
 
         let config = rustls::ServerConfig::builder()
@@ -114,6 +119,11 @@ impl MqttServer {
             .unwrap();
 
         let acceptor = TlsAcceptor::from(Arc::new(config));
+
+        log::info!(
+            "Initialized TLS on TCP listener at addr {}",
+            server.config.addr()
+        );
 
         loop {
             let (stream, addr) = listener.accept().await.unwrap();
@@ -137,7 +147,7 @@ impl MqttServer {
                 }
                 Err(err) => {
                     log::error!("{}", err);
-                    log::warn!("Rejected TCP connection.")
+                    log::warn!("Rejected TCP connection")
                 }
             }
         }

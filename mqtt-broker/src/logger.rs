@@ -19,6 +19,7 @@ impl log::Log for BrokerLoger {
     }
 
     fn log(&self, record: &Record) {
+        // TODO: figure out how to get the color strings to be held in a variable evaluated at compile time.
         if self.enabled(record.metadata()) {
             let colorized_level_string = match record.level() {
                 Level::Error => format!("{:<5}", record.level().to_string())
@@ -49,52 +50,41 @@ impl log::Log for BrokerLoger {
                 Level::Trace => {
                     unimplemented!();
                 }
-                Level::Debug => {
-                    if let Ok(mut file) = fs::OpenOptions::new().append(true).open("logs/debug.log")
-                    {
+                Level::Debug => match fs::OpenOptions::new().append(true).open("logs/debug.log") {
+                    Ok(mut file) => {
                         file.write_all(log_string.as_bytes()).unwrap();
-                        // we dont want to print debug output, so return.
+                    }
+                    Err(err) => {
+                        let err = format!("{colorized_level_string} - Could not write Debug message to logs/debug.log\n\t{err}\n\t\t{}\n\t - {timestamp};", record.args().to_string().split(";").next().unwrap());
+                        eprintln!("{}", err);
                         return;
                     }
-                    // Cant promote the log, so print to the terminal.
-                    else {
-                        let err = format!(
-                            "{colorized_level_string} - Could not write Debug message to logs/debug.log\n\t{} - {timestamp};",
-                            record.args(),
-                        );
-                        println!("{}", err);
-                        return;
-                    }
-                }
+                },
                 Level::Error => {
-                    if let Ok(mut file) = fs::OpenOptions::new().append(true).open("logs/error.log")
-                    {
-                        file.write_all(log_string.as_bytes()).unwrap();
+                    match fs::OpenOptions::new().append(true).open("logs/error.log") {
+                        Ok(mut file) => {
+                            file.write_all(log_string.as_bytes()).unwrap();
+                        }
+                        Err(err) => {
+                            let err = format!("{} - Could not write Debug message to logs/error.log\n\t{err}\n\t\t{}\n\t - {timestamp};", Level::Debug.to_string().purple(), record.args().to_string().split(";").next().unwrap());
+                            log::debug!("{}", err);
+                            eprintln!("{}", err);
+                            return;
+                        }
                     }
                     // promote the log to a higher level
-                    else {
-                        let err = format!(
-                            "{colorized_level_string} - Could not write Debug message to logs/debug.log\n\t{} - {timestamp};",
-                            record.args(),
-                        );
-                        log::debug!("{}", err);
-                        println!("{}", err);
-                        return;
-                    }
                 }
                 Level::Warn | Level::Info => {
-                    if let Ok(mut file) = fs::OpenOptions::new().append(true).open("logs/main.log")
-                    {
-                        file.write_all(log_string.as_bytes()).unwrap();
-                    }
-                    // promote the log to a higher level
-                    else {
-                        let err = format!(
-                            "{colorized_level_string} - Could not write Debug message to logs/debug.log\n\t{} - {timestamp};",
-                            record.args(),
-                        );
-                        log::error!("{}", err);
-                        return;
+                    match fs::OpenOptions::new().append(true).open("logs/main.log") {
+                        Ok(mut file) => {
+                            file.write_all(log_string.as_bytes()).unwrap();
+                        }
+                        Err(err) => {
+                            let err = format!("{} - Could not write Debug message to logs/main.log\n\t{err}\n\t\t{}\n\t - {timestamp};", Level::Error.as_str().red(), record.args().to_string().split(";").next().unwrap());
+                            log::error!("{}", err);
+                            eprintln!("{}", err);
+                            return;
+                        }
                     }
                 }
             }

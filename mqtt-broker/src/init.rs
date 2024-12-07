@@ -14,10 +14,8 @@ pub struct MqttEnv {
 
 impl MqttEnv {
     pub fn init_env(self) -> Self {
-        init_tls_creds();
         init_log_fs();
-
-        let _logger = BrokerLoger::new().init().unwrap();
+        init_tls_creds();
 
         return self;
     }
@@ -74,11 +72,13 @@ pub fn init_rsa_key() {
     }
 
     if let Err(err) = pk {
-        panic!("Could not create RSA private key: {err}")
+        log::error!("Could not create RSA private key: {err}");
+        panic!();
     } else if let Ok(pk_out) = pk {
         if !pk_out.status.success() {
             let stderr = String::from_utf8_lossy(&pk_out.stderr);
-            panic!("OpenSSL certificate generation failed: {stderr}");
+            log::error!("OpenSSL certificate generation failed: {stderr}");
+            panic!();
         }
     }
 }
@@ -103,11 +103,13 @@ pub fn init_tls_cert() {
         .output();
 
     if let Err(err) = cert {
-        panic!("Could not create TLS certificate: {err}");
+        log::error!("Could not create TLS certificate: {err}");
+        panic!();
     } else if let Ok(cert_out) = cert {
         if !cert_out.status.success() {
             let stderr = String::from_utf8_lossy(&cert_out.stderr);
-            panic!("OpenSSL certificate generation failed: {stderr}");
+            log::error!("OpenSSL certificate generation failed: {stderr}");
+            panic!();
         }
     }
 
@@ -117,27 +119,28 @@ pub fn init_tls_cert() {
 const FILE_CREATE_ERR: &'static str = "Could not create file: ";
 
 pub fn init_log_fs() {
+    let _logger = BrokerLoger::new().init().unwrap();
+
     let path = Path::new("logs");
 
-    if !fs::exists(path).unwrap() {
+    if !fs::exists(path).expect("Could not initialize Log files") {
         fs::create_dir(path).expect("Could not create logs directory");
 
         let path = path.to_path_buf();
 
-        let debug = path.join("/debug.log");
-
+        let debug = path.join("debug.log");
         if let Err(err) = File::create(&debug) {
             // debug does not print to the console, so print the error message to the console to provide error information.
             log::error!("{FILE_CREATE_ERR}{}\n\t{err}", debug.display());
         }
 
-        let error = path.join("/error.log");
+        let error = path.join("error.log");
         if let Err(err) = File::create(&error) {
             log::debug!("{FILE_CREATE_ERR}{}\n\t{err}", error.display());
             log::error!("{FILE_CREATE_ERR}{}", error.display());
         }
 
-        let main = path.join("/main.log");
+        let main = path.join("main.log");
         if let Err(err) = File::create(&main) {
             log::debug!("{FILE_CREATE_ERR}{}\n\t{err}", error.display());
             log::error!("{FILE_CREATE_ERR}{}", error.display());
