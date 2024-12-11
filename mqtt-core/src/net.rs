@@ -8,11 +8,7 @@ use tokio::{
 };
 
 use crate::{
-    err::{
-        self,
-        server::{self, ServerError},
-        DecodeError, DecodeErrorKind,
-    },
+    err::{self, DecodeError, DecodeErrorKind},
     v3::{decode_packet, FixedHeader, MqttPacket},
 };
 

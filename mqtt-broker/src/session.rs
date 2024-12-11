@@ -245,9 +245,9 @@ impl DisconnectedSessions {
         };
     }
 
-    pub fn len(&self) -> usize {
-        return self.dc_sessions.len();
-    }
+    // pub fn len(&self) -> usize {
+    //     return self.dc_sessions.len();
+    // }
 
     pub fn clean_expired(&mut self) {
         let expired = self.find_sessions(|x| x.expired());
@@ -271,7 +271,7 @@ impl DisconnectedSessions {
 
     pub fn add_session(&mut self, session: DisconnectedSession) {
         let client_id = session.client_id().to_string();
-        let insert_res = self.dc_sessions.insert(client_id, session);
+        self.dc_sessions.insert(client_id, session);
     }
 
     pub fn remove_session(&mut self, id: &str) -> Option<DisconnectedSession> {

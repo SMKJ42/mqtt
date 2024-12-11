@@ -2,10 +2,7 @@ use std::time::Duration;
 
 use mqtt_client::r#async::AsyncClient;
 use mqtt_core::v3::{ConnectPacket, MqttPacket};
-use tokio::{
-    net::TcpStream,
-    time::{sleep, Instant},
-};
+use tokio::{net::TcpStream, time::Instant};
 
 const MAXPING: u32 = 1000000;
 #[tokio::main]
