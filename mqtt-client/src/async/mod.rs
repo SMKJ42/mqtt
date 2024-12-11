@@ -9,7 +9,7 @@ use mqtt_core::{
     id::{IdGenType, IdGenerator},
 };
 
-use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::io::{AsyncRead, AsyncWrite, BufReader};
 use tokio::{io::AsyncWriteExt, net::TcpStream};
 use tokio_rustls::client::TlsStream;
 
@@ -39,7 +39,7 @@ pub struct AsyncClient<T>
 where
     T: AsyncRead + AsyncWriteExt + Unpin + Disconnect,
 {
-    stream: T,
+    stream: BufReader<T>,
     id_gen: IdGenerator,
 }
 
@@ -49,7 +49,7 @@ where
 {
     pub fn new(stream: T) -> Self {
         return Self {
-            stream,
+            stream: BufReader::new(stream),
             id_gen: IdGenerator::new(IdGenType::Client),
         };
     }
@@ -137,12 +137,12 @@ where
     }
 
     pub async fn disconnect(&mut self) -> Result<(), ClientError> {
-        self.stream.disconnect().await
+        self.stream.get_mut().disconnect().await
     }
 }
 
 impl<T: AsyncRead + AsyncWrite + Unpin + Disconnect> Drop for AsyncClient<T> {
     fn drop(&mut self) {
-        block_on(self.stream.disconnect()).unwrap();
+        block_on(self.stream.get_mut().disconnect()).unwrap();
     }
 }

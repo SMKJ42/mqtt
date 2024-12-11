@@ -7,7 +7,7 @@ use tokio::{
     time::{sleep, Instant},
 };
 
-const MAXPING: u32 = 10000;
+const MAXPING: u32 = 1000000;
 #[tokio::main]
 async fn main() {
     let stream = TcpStream::connect("127.0.0.1:1883").await.unwrap();
@@ -19,15 +19,14 @@ async fn main() {
     let mut dur = Duration::from_secs(0);
     let start = Instant::now();
 
-    for i in 0..MAXPING {
-        sleep(Duration::from_micros(1)).await;
+    for _ in 0..MAXPING {
         client.ping().await.unwrap();
-        let start = Instant::now();
+        let curr_start = Instant::now();
         loop {
             if let Some(packet) = client.recv_packet().await.unwrap() {
                 match packet {
                     MqttPacket::PingResp(_) => {
-                        dur += Instant::now().duration_since(start);
+                        dur += Instant::now().duration_since(curr_start);
                         break;
                     }
                     _ => {

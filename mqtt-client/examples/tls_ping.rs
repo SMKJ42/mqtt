@@ -8,7 +8,7 @@ use tokio_rustls::{
 use mqtt_client::r#async::AsyncClient;
 use mqtt_core::v3::{ConnectPacket, MqttPacket};
 use tokio::{
-    io::AsyncWriteExt,
+    io::BufReader,
     net::TcpStream,
     time::{sleep, Instant},
 };
@@ -18,6 +18,7 @@ const MAXPING: u32 = 10000;
 #[tokio::main]
 async fn main() {
     let stream = TcpStream::connect("127.0.0.1:8883").await.unwrap();
+    // let stream = BufReader::new(stream);
 
     let domain = "test.mqtt.com";
 
@@ -43,7 +44,6 @@ async fn main() {
     let start = Instant::now();
 
     for _ in 0..MAXPING {
-        sleep(Duration::from_micros(1)).await;
         client.ping().await.unwrap();
         let start = Instant::now();
         loop {

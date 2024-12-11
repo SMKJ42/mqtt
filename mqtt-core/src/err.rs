@@ -61,6 +61,7 @@ pub enum DecodeErrorKind {
     InvalidReturnCode,
     ImproperDisconnect,
     ProtocolError,
+    Timeout,
 }
 
 pub mod client {

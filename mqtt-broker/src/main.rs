@@ -12,10 +12,7 @@ use config::MqttConfig;
 use init::MqttEnv;
 
 use mqtt_core::{
-    err::{
-        server::{self, ServerError},
-        DecodeErrorKind,
-    },
+    err::server::{self, ServerError},
     net::read_packet,
     qos::{QosLevel, SubAckQoS},
     topics::{TopicFilter, TopicName},
@@ -84,6 +81,8 @@ impl MqttServer {
 
                     let server_clone = Arc::clone(&server);
 
+                    // let mut stream = BufReader::new(stream);
+
                     tokio::spawn(async move {
                         if let Err(err) = handle_client(server_clone, &mut stream).await {
                             log::error!("Error handling client: {err}");
@@ -133,10 +132,12 @@ impl MqttServer {
 
             server.clean_expired_sessions().await;
             match acceptor.accept(stream).await {
-                Ok(mut tls_stream) => {
+                Ok(tls_stream) => {
                     log::info!("New connection attempt from: {addr}");
 
                     let server_clone = Arc::clone(&server);
+
+                    let mut tls_stream = BufReader::new(tls_stream);
 
                     tokio::spawn(async move {
                         if let Err(err) = handle_client(server_clone, &mut tls_stream).await {
@@ -331,8 +332,6 @@ async fn establish_session<S: AsyncRead + AsyncWriteExt + Unpin>(
     stream: &mut S,
 ) -> Result<Option<ActiveSession>, ServerError> {
     loop {
-        tokio::task::yield_now().await;
-
         match read_packet::<_, ServerError>(stream).await {
             Ok(packet_opt) => {
                 match packet_opt {
@@ -402,8 +401,6 @@ async fn handle_session<S: AsyncRead + AsyncWrite + Unpin>(
 
     loop {
         // read in all packets.
-        tokio::task::yield_now().await;
-
         while let Ok(packet_res) = read_packet::<_, ServerError>(stream).await {
             match packet_res {
                 Some(packet) => {

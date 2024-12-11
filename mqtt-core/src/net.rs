@@ -8,7 +8,11 @@ use tokio::{
 };
 
 use crate::{
-    err,
+    err::{
+        self,
+        server::{self, ServerError},
+        DecodeError, DecodeErrorKind,
+    },
     v3::{decode_packet, FixedHeader, MqttPacket},
 };
 
@@ -18,11 +22,17 @@ pub async fn read_packet<
 >(
     stream: &mut S,
 ) -> Result<Option<MqttPacket>, E> {
-    let fut1 = sleep(Duration::from_millis(1));
+    let timeout_dur = Duration::from_millis(10);
+    let fut1 = sleep(timeout_dur);
 
     futures::select! {
         _ = fut1.fuse() => {
-            return Ok(None);
+            return Err(
+                DecodeError::new(
+                    DecodeErrorKind::Timeout,
+                    format!("Could not decode packet within {} millis", timeout_dur.as_millis().to_string()
+                )).into()
+            )
         }
         out = unfused_read_packet(stream).fuse() => {
             return out;
