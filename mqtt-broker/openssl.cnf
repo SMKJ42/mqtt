@@ -1,13 +1,24 @@
 [ req ]
 default_bits       = 2048
-prompt             = no
 default_md         = sha256
+default_keyfile    = key.pem
+prompt             = no
 distinguished_name = req_distinguished_name
+x509_extensions    = v3_req
 
 [ req_distinguished_name ]
 C                  = US
-ST                 = <state>
-L                  = <city>
-O                  = <my_organization>
-OU                 = <my_unit>
-CN                 = 127.0.0.1
+ST                 = State
+L                  = City
+O                  = MyOrganization
+OU                 = MyUnit
+CN                 = test.mqtt.com
+
+[ v3_req ]
+subjectAltName     = @alt_names
+
+[ alt_names ]
+DNS.1              = test.mqtt.com
+DNS.2              = localhost
+IP.1               = 127.0.0.1
+IP.2               = ::1

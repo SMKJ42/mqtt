@@ -53,8 +53,6 @@ pub fn init_tls_creds() {
 }
 
 pub fn init_rsa_key() {
-    // generate RSA private key
-
     let pk = Command::new("openssl")
         .args([
             "genpkey",

@@ -1,6 +1,6 @@
 :warning: Actively in development and NOT a release version. :warning:
 
-warning: The underlying memory for messages with QoS > 0 utilizes a TCP broadcast and WILL lose messages if the queue gets filled. :warning:
+:warning: The underlying memory for messages with QoS > 0 utilizes a TCP broadcast and WILL lose messages if the queue gets filled. :warning:
 
 ## Follows MQTT v3.1.1 Specifications.
 

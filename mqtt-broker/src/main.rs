@@ -2,29 +2,32 @@ mod config;
 mod init;
 mod logger;
 mod mailbox;
-mod net;
 mod session;
 mod topic;
 
 use std::sync::Arc;
 
-use bytes::{Buf, Bytes, BytesMut};
+use bytes::Bytes;
 use config::MqttConfig;
 use init::MqttEnv;
 
 use mqtt_core::{
-    err::{server, server::ServerError, DecodeErrorKind},
+    err::{
+        server::{self, ServerError},
+        DecodeErrorKind,
+    },
+    net::read_packet,
     qos::{QosLevel, SubAckQoS},
     topics::{TopicFilter, TopicName},
     v3::{
-        decode_packet, ConnAckPacket, FilterResult, FixedHeader, MqttPacket, PingRespPacket,
-        PubAckPacket, PubCompPacket, PublishPacket, SubAckPacket, UnsubAckPacket,
+        ConnAckPacket, FilterResult, MqttPacket, PingRespPacket, PubAckPacket, PubCompPacket,
+        PublishPacket, SubAckPacket, UnsubAckPacket,
     },
     ConnectReturnCode,
 };
 
 use tokio::{
-    io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
+    io::{AsyncRead, AsyncWrite, AsyncWriteExt, BufReader},
     join,
     net::TcpListener,
     sync::{Mutex, RwLock},
@@ -34,7 +37,6 @@ use rustls::pki_types::{pem::PemObject, CertificateDer, PrivateKeyDer};
 use tokio_rustls::TlsAcceptor;
 
 use mailbox::{Mail, Mailbox};
-use net::MqttStream;
 use session::{ActiveSession, DisconnectedSessions};
 use topic::ServerTopics;
 
@@ -63,7 +65,7 @@ impl MqttServer {
 
         let listener = TcpListener::bind(&addr).await.unwrap();
 
-        log::info!("Server listening on port: {}", addr);
+        log::info!("Server listening at: {}", addr);
 
         if self.config.is_tls_enabled() {
             self.start_tls(listener).await;
@@ -78,7 +80,7 @@ impl MqttServer {
             server.clean_expired_sessions().await;
             match listener.accept().await {
                 Ok((mut stream, addr)) => {
-                    log::info!("New connection attempt from {addr}");
+                    log::info!("New connection attempt: {addr}");
 
                     let server_clone = Arc::clone(&server);
 
@@ -121,7 +123,7 @@ impl MqttServer {
         let acceptor = TlsAcceptor::from(Arc::new(config));
 
         log::info!(
-            "Initialized TLS on TCP listener at addr {}",
+            "Initialized TLS on TCP listener at addr: {}",
             server.config.addr()
         );
 
@@ -131,17 +133,21 @@ impl MqttServer {
 
             server.clean_expired_sessions().await;
             match acceptor.accept(stream).await {
-                Ok(mut stream) => {
-                    log::info!("New connection attempt from {addr}");
+                Ok(mut tls_stream) => {
+                    log::info!("New connection attempt from: {addr}");
 
                     let server_clone = Arc::clone(&server);
 
                     tokio::spawn(async move {
-                        if let Err(err) = handle_client(server_clone, &mut stream).await {
+                        if let Err(err) = handle_client(server_clone, &mut tls_stream).await {
                             log::error!("Error handling client: {err}");
                             log::warn!("Closing connection: {addr}")
                         } else {
-                            log::info!("Gracefully closing connection: {addr}")
+                            if let Err(_) = tls_stream.shutdown().await {
+                                log::error!("Did not gracefully close connection: {addr}")
+                            } else {
+                                log::info!("Gracefully closing connection: {addr}")
+                            }
                         }
                     });
                 }
@@ -274,15 +280,19 @@ impl MqttServer {
 }
 
 /// Handle a single TCP client connection event loop.
-async fn handle_client<S: MqttStream>(
+async fn handle_client<S: AsyncRead + AsyncWrite + Unpin>(
     server: Arc<MqttServer>,
     stream: &mut S,
 ) -> Result<(), ServerError> {
     let active_session = establish_session(&server, stream).await?;
 
+    log::info!("connected");
+
     if let Some(mut session) = active_session {
         match handle_session(&server, stream, &mut session).await {
-            Ok(()) => return Ok(()),
+            Ok(()) => {
+                return Ok(());
+            }
             // If the session encounters an error, the error should close the connection.
             Err(err) => {
                 let pub_to_server_fut = server.publish_will(&mut session);
@@ -316,108 +326,106 @@ async fn handle_client<S: MqttStream>(
 /// This function is NOT part of the main event loop of the client's connection instance.
 ///
 
-async fn establish_session<S: MqttStream>(
+async fn establish_session<S: AsyncRead + AsyncWriteExt + Unpin>(
     server: &Arc<MqttServer>,
     stream: &mut S,
 ) -> Result<Option<ActiveSession>, ServerError> {
     loop {
         tokio::task::yield_now().await;
-        let mut buf = [0; 5];
-        while stream.mqtt_poll_peek(&mut buf).await {
-            let (f_header, mut buf) = read_header(stream, buf).await?;
-            let packet = match decode_packet(f_header, &mut buf) {
-                // handle invalid protocol levels
-                Ok(value) => value,
-                Err(err) => {
-                    if err.kind() == DecodeErrorKind::InvalidProtocol {
-                        stream
-                            .write_all(
-                                &ConnAckPacket::new(false, ConnectReturnCode::InvalidProtocol)
-                                    .encode(),
-                            )
-                            .await?;
-                    };
-                    return Err(err.into());
-                }
-            };
 
-            let session: ActiveSession;
+        match read_packet::<_, ServerError>(stream).await {
+            Ok(packet_opt) => {
+                match packet_opt {
+                    Some(packet) => {
+                        let session: ActiveSession;
+                        match packet {
+                            MqttPacket::PingReq(_) => {
+                                stream
+                                    .write_all(&mut PingRespPacket::new().encode())
+                                    .await?;
 
-            match packet {
-                MqttPacket::PingReq(_) => {
-                    stream
-                        .write_all(&mut PingRespPacket::new().encode())
-                        .await?;
+                                return Ok(None);
+                            }
 
-                    return Ok(None);
-                }
+                            MqttPacket::Connect(packet) => {
+                                let mut sessions = server.dc_sessions.lock().await;
+                                let mut connack = ConnAckPacket::new(false, ConnectReturnCode::Accept);
 
-                MqttPacket::Connect(packet) => {
-                    let mut sessions = server.dc_sessions.lock().await;
-                    let mut connack = ConnAckPacket::new(false, ConnectReturnCode::Accept);
+                                // Check if the server has a session history.
+                                if let Some(dc_session) = sessions.remove_session(packet.client_id()) {
+                                    if packet.clean_session() {
+                                        // The client requested to resume from a client's prior history.
+                                        connack.set_session_present(true);
+                                        session = dc_session.into_active(packet);
+                                    } else {
+                                        // The client requested a new session, drop the old session history and continue.
+                                        session = ActiveSession::from_packet(packet);
+                                    }
+                                } else {
+                                    // The server does not have any session history.
+                                    session = ActiveSession::from_packet(packet);
+                                }
 
-                    // Check if the server has a session history.
-                    if let Some(dc_session) = sessions.remove_session(packet.client_id()) {
-                        if packet.clean_session() {
-                            // The client requested to resume from a client's prior history.
-                            connack.set_session_present(true);
-                            session = dc_session.into_active(packet);
-                        } else {
-                            // The client requested a new session, drop the old session history and continue.
-                            session = ActiveSession::from_packet(packet);
-                        }
-                    } else {
-                        // The server does not have any session history.
-                        session = ActiveSession::from_packet(packet);
+                                stream.write_all(&connack.encode()).await?;
+                            }
+                            _ => {
+                                return Err(ServerError::new(
+                                    server::ErrorKind::ProtocolError,
+                                    String::from(
+                                        "Cannot initialize connection without first receiving a CONNECT packet",
+                                    ),
+                                ))
+                            }
+                        };
+
+                        return Ok(Some(session));
                     }
 
-                    stream.write_all(&connack.encode()).await?;
+                    // requeue the task.
+                    None => continue,
                 }
-                _ => {
-                    return Err(ServerError::new(
-                        server::ErrorKind::ProtocolError,
-                        String::from(
-                            "Cannot initialize connection without first receiving a CONNECT packet",
-                        ),
-                    ))
-                }
-            };
-            return Ok(Some(session));
+            }
+            Err(err) => {
+                return Err(err.into());
+            }
         }
     }
 }
 
 /// Handle a MQTT client connection event loop after CONNECT packet receipt.
-async fn handle_session<S: MqttStream>(
+async fn handle_session<S: AsyncRead + AsyncWrite + Unpin>(
     server: &Arc<MqttServer>,
     mut stream: &mut S,
     session: &mut ActiveSession,
 ) -> Result<(), ServerError> {
     let mut mailbox = Mailbox::new();
+
     loop {
         // read in all packets.
         tokio::task::yield_now().await;
-        let mut buf = [0; 5];
-        while stream.mqtt_poll_peek(&mut buf).await {
-            let (f_header, buf) = read_header(&mut stream, buf).await?;
-            // READ
 
-            let packet = decode_packet(f_header, &mut buf.into())?;
+        while let Ok(packet_res) = read_packet::<_, ServerError>(stream).await {
+            match packet_res {
+                Some(packet) => {
+                    if session.timed_out() {
+                        // if session has timed out, exit the main event loop
+                        return Ok(());
+                    } else {
+                        // if session has NOT timed out, update the last_read value of the session and continue the main event loop.
+                        session.update_last_read();
+                    }
 
-            if session.timed_out() {
-                // if session has timed out, exit the main event loop
-                return Ok(());
-            } else {
-                // if session has NOT timed out, update the last_read value of the session and continue the main event loop.
-                session.update_last_read();
+                    let should_shutdown =
+                        handle_packet(server, &mut stream, session, &mut mailbox, packet).await?;
+
+                    if should_shutdown {
+                        return Ok(());
+                    };
+                }
+                None => {
+                    break;
+                }
             }
-
-            let should_shutdown =
-                handle_packet(server, &mut stream, session, &mut mailbox, packet).await?;
-
-            if should_shutdown {
-                return Ok(());
-            };
         }
 
         // WRITE all newly received packets
@@ -604,26 +612,6 @@ async fn handle_packet<S: AsyncRead + AsyncWrite + Unpin>(
         }
     }
     return Ok(false);
-}
-
-async fn read_header<S: AsyncRead + Unpin>(
-    stream: &mut S,
-    buf: [u8; 5],
-) -> Result<(FixedHeader, Bytes), ServerError> {
-    // read the header bytes
-    let mut buf = Bytes::from_iter(buf);
-    let f_header = FixedHeader::decode(&mut buf)?;
-
-    // Allocate a buf with the provided packet length.
-    let mut buf_mut = BytesMut::with_capacity(f_header.header_len() + f_header.rest_len());
-
-    // read the rest of the packet into the buf.
-    stream.read_buf(&mut buf_mut).await?;
-
-    // advance the header bytes.
-    buf_mut.advance(f_header.header_len());
-
-    return Ok((f_header, buf_mut.into()));
 }
 
 #[tokio::main]

@@ -40,7 +40,7 @@ const PACKET_TYPE_BITS: u8 = 0b1111_0000;
 const PACKET_FLAG_BITS: u8 = 0b0000_1111;
 
 pub fn decode_packet(f_header: FixedHeader, buf: &mut Bytes) -> Result<MqttPacket, DecodeError> {
-    MqttPacket::decode(f_header, &mut Bytes::copy_from_slice(buf))
+    MqttPacket::decode(f_header, buf)
 }
 
 #[derive(PartialEq, Debug, Clone)]

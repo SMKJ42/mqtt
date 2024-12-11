@@ -1,3 +1,5 @@
+use std::{error::Error, fmt::Display};
+
 #[derive(Debug, Clone)]
 pub struct EncodeError {
     kind: EncodeErrorKind,
@@ -19,10 +21,18 @@ pub enum EncodeErrorKind {
     OversizedPayload,
 }
 
+impl Error for DecodeError {}
+
 #[derive(Debug, Clone)]
 pub struct DecodeError {
     kind: DecodeErrorKind,
     message: String,
+}
+
+impl Display for DecodeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}: {}", self.kind, self.message)
+    }
 }
 
 impl DecodeError {

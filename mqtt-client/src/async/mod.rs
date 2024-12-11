@@ -1,28 +1,53 @@
-use std::{future::poll_fn, task::Poll};
-
-use bytes::{Buf, Bytes, BytesMut};
 use futures::executor::block_on;
+use mqtt_core::net::read_packet;
 use mqtt_core::v3::{
-    ConnectPacket, DisconnectPacket, FixedHeader, MqttPacket, PingReqPacket, PubAckPacket,
-    PubCompPacket, PubRecPacket, PubRelPacket, PublishPacket, SubscribePacket, UnsubscribePacket,
+    ConnectPacket, DisconnectPacket, MqttPacket, PingReqPacket, PubAckPacket, PubCompPacket,
+    PubRecPacket, PubRelPacket, PublishPacket, SubscribePacket, UnsubscribePacket,
 };
 use mqtt_core::{
     err::client::{self, ClientError},
     id::{IdGenType, IdGenerator},
 };
-use tokio::task::block_in_place;
-use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt, ReadBuf},
-    net::TcpStream,
-};
 
-pub struct AsyncClient {
-    stream: TcpStream,
+use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::{io::AsyncWriteExt, net::TcpStream};
+use tokio_rustls::client::TlsStream;
+
+pub trait Disconnect {
+    #[allow(async_fn_in_trait)]
+    /// Use this function when a client is intending to shutdown.
+    async fn disconnect(&mut self) -> Result<(), ClientError>;
+}
+
+impl Disconnect for TcpStream {
+    async fn disconnect(&mut self) -> Result<(), ClientError> {
+        let disconnect_packet = DisconnectPacket::new();
+        self.write_all(&disconnect_packet.encode()).await?;
+        return Ok(());
+    }
+}
+
+impl Disconnect for TlsStream<TcpStream> {
+    async fn disconnect(&mut self) -> Result<(), ClientError> {
+        let disconnect_packet = DisconnectPacket::new();
+        self.write_all(&disconnect_packet.encode()).await?;
+        return Ok(());
+    }
+}
+
+pub struct AsyncClient<T>
+where
+    T: AsyncRead + AsyncWriteExt + Unpin + Disconnect,
+{
+    stream: T,
     id_gen: IdGenerator,
 }
 
-impl AsyncClient {
-    pub fn new(stream: TcpStream) -> Self {
+impl<T> AsyncClient<T>
+where
+    T: AsyncRead + AsyncWrite + Unpin + Disconnect,
+{
+    pub fn new(stream: T) -> Self {
         return Self {
             stream,
             id_gen: IdGenerator::new(IdGenType::Client),
@@ -35,17 +60,22 @@ impl AsyncClient {
 
     pub async fn connect(&mut self, packet: ConnectPacket) -> Result<(), ClientError> {
         self.stream.write_all(&mut packet.encode().unwrap()).await?;
+        self.stream.flush().await?;
         loop {
-            if let Some(packet) = read_packet(&mut self.stream).await.unwrap() {
+            if let Some(packet) = read_packet::<_, ClientError>(&mut self.stream)
+                .await
+                .unwrap()
+            {
                 match packet {
                     MqttPacket::ConnAck(..) => return Ok(()),
                     _ => {
+                        println!("packet: {:?}", packet);
                         return Err(ClientError::new(
                             client::ErrorKind::ProtocolError,
                             String::from(
                                 "First packet received from broker was not a CONNACK packet.",
                             ),
-                        ))
+                        ));
                     }
                 }
             }
@@ -107,56 +137,12 @@ impl AsyncClient {
     }
 
     pub async fn disconnect(&mut self) -> Result<(), ClientError> {
-        let disconnect_packet = DisconnectPacket::new();
-        self.stream.write_all(&disconnect_packet.encode()).await?;
-        return Ok(());
+        self.stream.disconnect().await
     }
 }
 
-async fn read_packet(stream: &mut TcpStream) -> Result<Option<MqttPacket>, ClientError> {
-    if let Some((f_header, buf)) = read_header(stream).await? {
-        let packet = MqttPacket::decode(f_header, &mut buf.into())?;
-        return Ok(Some(packet));
-    } else {
-        return Ok(None);
-    }
-}
-
-async fn read_header(stream: &mut TcpStream) -> Result<Option<(FixedHeader, Bytes)>, ClientError> {
-    let mut buf: [u8; 5] = [0; 5];
-    let mut buf = ReadBuf::new(&mut buf);
-
-    let ready_state = poll_fn(|cx| {
-        if stream.poll_peek(cx, &mut buf).is_ready() {
-            Poll::Ready(Some(()))
-        } else {
-            Poll::Ready(None)
-        }
-    })
-    .await;
-
-    if let Some(()) = ready_state {
-        // read the header bytes
-        let mut buf = Bytes::from_iter(buf.filled().iter().cloned());
-        let f_header = FixedHeader::decode(&mut buf)?;
-
-        // create a new space allocated for
-        let mut buf_mut = BytesMut::with_capacity(f_header.header_len() + f_header.rest_len());
-
-        // read the rest of the packet into the buf.
-        stream.read_buf(&mut buf_mut).await?;
-
-        // advance the header bytes.
-        buf_mut.advance(f_header.header_len());
-
-        return Ok(Some((f_header, buf_mut.into())));
-    } else {
-        return Ok(None);
-    }
-}
-
-impl Drop for AsyncClient {
+impl<T: AsyncRead + AsyncWrite + Unpin + Disconnect> Drop for AsyncClient<T> {
     fn drop(&mut self) {
-        block_on(self.disconnect()).unwrap();
+        block_on(self.stream.disconnect()).unwrap();
     }
 }

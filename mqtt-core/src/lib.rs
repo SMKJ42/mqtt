@@ -6,6 +6,7 @@ pub mod err;
 pub mod id;
 pub mod io;
 pub mod msg_assurance;
+pub mod net;
 pub mod qos;
 pub mod topics;
 pub mod v3;
