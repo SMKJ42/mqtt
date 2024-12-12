@@ -44,7 +44,7 @@ async fn main() {
                 }
                 _ => {
                     println!("{:?}", packet);
-                    panic!("Should have received a PUBACK.")
+                    panic!("Received a packet other than PUBACK or PUBLISH.")
                 }
             }
         }

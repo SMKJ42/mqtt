@@ -24,10 +24,11 @@ use mqtt_core::{
 };
 
 use tokio::{
-    io::{AsyncRead, AsyncWrite, AsyncWriteExt, BufReader},
+    io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader},
     join,
     net::TcpListener,
     sync::{Mutex, RwLock},
+    task::yield_now,
 };
 
 use rustls::pki_types::{pem::PemObject, CertificateDer, PrivateKeyDer};
@@ -281,7 +282,7 @@ impl MqttServer {
 }
 
 /// Handle a single TCP client connection event loop.
-async fn handle_client<S: AsyncRead + AsyncWrite + Unpin>(
+async fn handle_client<S: AsyncReadExt + AsyncWrite + Unpin>(
     server: Arc<MqttServer>,
     stream: &mut S,
 ) -> Result<(), ServerError> {
@@ -327,7 +328,7 @@ async fn handle_client<S: AsyncRead + AsyncWrite + Unpin>(
 /// This function is NOT part of the main event loop of the client's connection instance.
 ///
 
-async fn establish_session<S: AsyncRead + AsyncWriteExt + Unpin>(
+async fn establish_session<S: AsyncWriteExt + AsyncReadExt + Unpin>(
     server: &Arc<MqttServer>,
     stream: &mut S,
 ) -> Result<Option<ActiveSession>, ServerError> {
