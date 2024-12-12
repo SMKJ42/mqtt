@@ -5,7 +5,10 @@ mod mailbox;
 mod session;
 mod topic;
 
-use std::sync::Arc;
+use std::{
+    path::{Path, PathBuf},
+    sync::Arc,
+};
 
 use bytes::Bytes;
 use config::MqttConfig;
@@ -28,7 +31,6 @@ use tokio::{
     join,
     net::TcpListener,
     sync::{Mutex, RwLock},
-    task::yield_now,
 };
 
 use rustls::pki_types::{pem::PemObject, CertificateDer, PrivateKeyDer};
@@ -614,7 +616,8 @@ async fn handle_packet<S: AsyncRead + AsyncWrite + Unpin>(
 
 #[tokio::main]
 async fn main() -> tokio::io::Result<()> {
-    let env = MqttEnv::new("config.toml").init_env();
+    let config_path = PathBuf::from("config.toml");
+    let env = MqttEnv::new(&config_path).init_env();
     let server = MqttServer::new(env.config());
     server.start().await;
 

@@ -7,7 +7,12 @@ use colored::*;
 use log::{Level, Metadata, Record, SetLoggerError};
 use time::{format_description::FormatItem, OffsetDateTime};
 
-pub struct BrokerLoger;
+use crate::config::MqttConfig;
+
+pub struct BrokerLoger {
+    write_file: bool,
+    write_console: bool,
+}
 
 const TIMESTAMP_FORMAT_UTC: &[FormatItem] = time::macros::format_description!(
     "[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z"
@@ -21,6 +26,10 @@ impl log::Log for BrokerLoger {
     fn log(&self, record: &Record) {
         // TODO: figure out how to get the color strings to be held in a variable evaluated at compile time.
         if self.enabled(record.metadata()) {
+            let timestamp = OffsetDateTime::now_utc()
+                .format(TIMESTAMP_FORMAT_UTC)
+                .expect("Logger could not format the UTC time. It is likely that your system does not support UTC.");
+
             let colorized_level_string = match record.level() {
                 Level::Error => format!("{:<5}", record.level().to_string())
                     .red()
@@ -39,61 +48,13 @@ impl log::Log for BrokerLoger {
                     .to_string(),
             };
 
-            let timestamp = OffsetDateTime::now_utc()
-                .format(TIMESTAMP_FORMAT_UTC)
-                .expect("Logger could not format the UTC time. It is likely that your system does not support UTC.");
-
-            let log_string = format!("{};{};{}\n", record.level(), record.args(), timestamp);
-
-            // TODO: More graceful error handling.
-            match record.level() {
-                Level::Trace => {
-                    unimplemented!();
-                }
-                Level::Debug => match fs::OpenOptions::new().append(true).open("logs/debug.log") {
-                    Ok(mut file) => {
-                        file.write_all(log_string.as_bytes()).unwrap();
-                    }
-                    Err(err) => {
-                        let err = format!("{colorized_level_string} - Could not write Debug message to logs/debug.log\n\t{err}\n\t\t{}\n\t - {timestamp};", record.args().to_string().split(";").next().unwrap());
-                        eprintln!("{}", err);
-                        return;
-                    }
-                },
-                Level::Error => {
-                    match fs::OpenOptions::new().append(true).open("logs/error.log") {
-                        Ok(mut file) => {
-                            file.write_all(log_string.as_bytes()).unwrap();
-                        }
-                        Err(err) => {
-                            let err = format!("{} - Could not write Debug message to logs/error.log\n\t{err}\n\t\t{}\n\t - {timestamp};", Level::Debug.to_string().purple(), record.args().to_string().split(";").next().unwrap());
-                            log::debug!("{}", err);
-                            eprintln!("{}", err);
-                            return;
-                        }
-                    }
-                    // promote the log to a higher level
-                }
-                Level::Warn | Level::Info => {
-                    match fs::OpenOptions::new().append(true).open("logs/main.log") {
-                        Ok(mut file) => {
-                            file.write_all(log_string.as_bytes()).unwrap();
-                        }
-                        Err(err) => {
-                            let err = format!("{} - Could not write Debug message to logs/main.log\n\t{err}\n\t\t{}\n\t - {timestamp};", Level::Error.as_str().red(), record.args().to_string().split(";").next().unwrap());
-                            log::error!("{}", err);
-                            eprintln!("{}", err);
-                            return;
-                        }
-                    }
-                }
+            if self.write_console {
+                self.log_console(record, &colorized_level_string, &timestamp);
             }
 
-            // error messages are delimeted by a ; char
-            println!(
-                "{colorized_level_string} - {} - {timestamp};",
-                record.args(),
-            );
+            if self.write_file {
+                self.log_file(record, &colorized_level_string, &timestamp);
+            }
         }
     }
 
@@ -101,8 +62,67 @@ impl log::Log for BrokerLoger {
 }
 
 impl BrokerLoger {
-    pub fn new() -> Self {
-        return Self;
+    fn log_file(&self, record: &Record, colorized_level_string: &str, timestamp: &str) {
+        let log_string = format!("{};{};{}\n", record.level(), record.args(), timestamp);
+
+        match record.level() {
+            Level::Trace => {
+                unimplemented!();
+            }
+            Level::Debug => match fs::OpenOptions::new().append(true).open("logs/debug.log") {
+                Ok(mut file) => {
+                    file.write_all(log_string.as_bytes()).unwrap();
+                }
+                Err(err) => {
+                    let err = format!("{colorized_level_string} - Could not write Debug message to logs/debug.log\n\t{err}\n\t\t{}\n\t - {timestamp};", record.args().to_string().split(";").next().unwrap());
+                    eprintln!("{}", err);
+                    return;
+                }
+            },
+            Level::Error => {
+                match fs::OpenOptions::new().append(true).open("logs/error.log") {
+                    Ok(mut file) => {
+                        file.write_all(log_string.as_bytes()).unwrap();
+                    }
+                    Err(err) => {
+                        let err = format!("{} - Could not write Debug message to logs/error.log\n\t{err}\n\t\t{}\n\t - {timestamp};", Level::Debug.to_string().purple(), record.args().to_string().split(";").next().unwrap());
+                        log::debug!("{}", err);
+                        eprintln!("{}", err);
+                        return;
+                    }
+                }
+                // promote the log to a higher level
+            }
+            Level::Warn | Level::Info => {
+                match fs::OpenOptions::new().append(true).open("logs/main.log") {
+                    Ok(mut file) => {
+                        file.write_all(log_string.as_bytes()).unwrap();
+                    }
+                    Err(err) => {
+                        let err = format!("{} - Could not write Debug message to logs/main.log\n\t{err}\n\t\t{}\n\t - {timestamp};", Level::Error.as_str().red(), record.args().to_string().split(";").next().unwrap());
+                        log::error!("{}", err);
+                        eprintln!("{}", err);
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
+    fn log_console(&self, record: &Record, colorized_level_string: &str, timestamp: &str) {
+        println!(
+            "{colorized_level_string} - {} - {timestamp};",
+            record.args(),
+        );
+    }
+}
+
+impl BrokerLoger {
+    pub fn new(config: &MqttConfig) -> Self {
+        return Self {
+            write_file: config.should_log_file(),
+            write_console: config.should_log_console(),
+        };
     }
 
     pub fn init(self) -> Result<(), SetLoggerError> {

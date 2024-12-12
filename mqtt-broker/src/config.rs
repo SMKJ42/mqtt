@@ -1,32 +1,44 @@
 use core::net::Ipv4Addr;
 
-use std::{fs::File, io::Read};
+use std::{fs::File, io::Read, path::Path};
 
 use serde::Deserialize;
 
 // TODO: This will get unwildy really fast... needs some cleanup
+#[derive(Deserialize)]
 pub struct MqttConfig {
-    config: ConfigParams,
+    connection: Connection,
+    logger: Logger,
 }
 
 impl MqttConfig {
     pub fn addr(&self) -> String {
-        return self.config.connection.ip.to_string()
-            + ":"
-            + &self.config.connection.port.to_string();
+        return self.connection.ip.to_string() + ":" + &self.connection.port.to_string();
     }
 
     pub fn is_tls_enabled(&self) -> bool {
-        return self.config.connection.tls;
+        return self.connection.tls;
+    }
+
+    pub fn should_log_file(&self) -> bool {
+        return self.logger.file;
+    }
+
+    pub fn should_log_console(&self) -> bool {
+        return self.logger.console;
     }
 }
 
-impl From<&str> for MqttConfig {
-    fn from(value: &str) -> Self {
+impl TryFrom<&Path> for MqttConfig {
+    type Error = toml::de::Error;
+    fn try_from(value: &Path) -> Result<Self, toml::de::Error> {
         let mut file = match File::open(value) {
             Ok(file) => file,
             Err(err) => {
-                log::warn!("Could not load file {value} to initialize the configuration.");
+                log::warn!(
+                    "Could not load file: {} to initialize the configuration.",
+                    value.to_str().unwrap_or("")
+                );
                 log::error!("{err}");
                 panic!();
             }
@@ -34,35 +46,22 @@ impl From<&str> for MqttConfig {
 
         let mut buf = String::new();
         if let Err(err) = file.read_to_string(&mut buf) {
-            log::warn!("Could not read file {value}");
+            log::warn!("Could not read file {}", value.to_str().unwrap_or(""));
             log::error!("{err}");
         }
-        let config = match ConfigParams::deserialize(toml::Deserializer::new(&buf)) {
-            Ok(config) => {
-                if config.connection.tls {
-                    if config.connection.port == 1883 {
-                        log::warn!("Creating TLS connection on port 1883. This port is reserved for Plaintext MQTT connections.");
-                    }
-                } else if config.connection.port == 8883 {
-                    log::warn!("Creating Plaintext connection on port 8883. This port is reserved for TLS MQTT connections.");
-                }
 
-                config
-            }
-            Err(err) => {
-                log::warn!("Could not deserialize connection configuration.");
-                log::error!("{err}");
-                panic!("{err}");
-            }
-        };
+        let config: MqttConfig = toml::from_str(&buf)?;
 
-        return Self { config };
+        if config.connection.tls {
+            if config.connection.port == 1883 {
+                log::warn!("Creating TLS connection on port 1883. This port is reserved for Plaintext MQTT connections.");
+            }
+        } else if config.connection.port == 8883 {
+            log::warn!("Creating Plaintext connection on port 8883. This port is reserved for TLS MQTT connections.");
+        }
+
+        return Ok(config);
     }
-}
-
-#[derive(Deserialize)]
-pub struct ConfigParams {
-    connection: Connection,
 }
 
 #[derive(Deserialize)]
@@ -70,4 +69,10 @@ struct Connection {
     tls: bool,
     ip: Ipv4Addr,
     port: u16,
+}
+
+#[derive(Deserialize)]
+pub struct Logger {
+    console: bool,
+    file: bool,
 }

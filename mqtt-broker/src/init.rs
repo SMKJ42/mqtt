@@ -14,13 +14,20 @@ pub struct MqttEnv {
 
 impl MqttEnv {
     pub fn init_env(self) -> Self {
-        init_log_fs();
+        if self.config.should_log_file() || self.config.should_log_console() {
+            let _logger = BrokerLoger::new(&self.config).init().unwrap();
+            if self.config.should_log_file() {
+                init_log_fs();
+            }
+        } else {
+        }
+
         init_tls_creds();
 
         return self;
     }
 
-    pub fn new(config_path: &str) -> Self {
+    pub fn new(config_path: &Path) -> Self {
         match fs::exists(config_path) {
             Ok(_true) => {
                 if _true {
@@ -33,7 +40,7 @@ impl MqttEnv {
             }
         }
 
-        let config = MqttConfig::from(config_path);
+        let config = MqttConfig::try_from(config_path).unwrap();
 
         return Self { config };
     }
@@ -117,8 +124,6 @@ pub fn init_tls_cert() {
 const FILE_CREATE_ERR: &'static str = "Could not create file: ";
 
 pub fn init_log_fs() {
-    let _logger = BrokerLoger::new().init().unwrap();
-
     let path = Path::new("logs");
 
     if !fs::exists(path).expect("Could not initialize Log files") {
