@@ -5,10 +5,7 @@ mod mailbox;
 mod session;
 mod topic;
 
-use std::{
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+use std::{path::PathBuf, sync::Arc};
 
 use bytes::Bytes;
 use config::MqttConfig;

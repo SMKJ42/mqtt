@@ -1,4 +1,16 @@
-n
+[ req ]
+default_bits       = 2048
+default_md         = sha256
+default_keyfile    = key.pem
+prompt             = no
+distinguished_name = req_distinguished_name
+x509_extensions    = v3_req
+
+[ req_distinguished_name ]
+C                  = US
+ST                 = State
+L                  = City
+O                  = MyOrganization
 OU                 = MyUnit
 CN                 = test.mqtt.com
 
