@@ -13,7 +13,7 @@ use init::MqttEnv;
 
 use mqtt_core::{
     err::server::{self, ServerError},
-    net::read_packet,
+    io::read_packet,
     qos::{QosLevel, SubAckQoS},
     topic::{TopicFilter, TopicName},
     v3::{

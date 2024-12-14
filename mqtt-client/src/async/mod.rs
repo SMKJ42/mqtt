@@ -1,8 +1,8 @@
 use futures::executor::block_on;
-use mqtt_core::net::read_packet;
 use mqtt_core::{
     err::client::{self, ClientError},
     id::{IdGenType, IdGenerator},
+    io::read_packet,
     v3::{
         ConnectPacket, DisconnectPacket, MqttPacket, PingReqPacket, PubAckPacket, PubCompPacket,
         PubRecPacket, PubRelPacket, PublishPacket, SubscribePacket, UnsubscribePacket,
