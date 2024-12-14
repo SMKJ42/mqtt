@@ -36,17 +36,5 @@ async fn main() {
 
         println!("idx: {idx}");
         idx += 1;
-
-        // loop {
-        //     if let Some(packet) = client.recv_packet().await.unwrap() {
-        //         match packet {
-        //             _ => {
-        //                 panic!("Should not receive any packets.")
-        //             }
-        //         }
-        //     } else {
-        //         break;
-        //     }
-        // }
     }
 }

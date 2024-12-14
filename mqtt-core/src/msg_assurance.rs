@@ -523,7 +523,7 @@ pub struct RetryDuration {
 impl ExponentialBackoff for RetryDuration {
     fn default() -> Self {
         return Self {
-            dur: Duration::from_millis(1000),
+            dur: Duration::from_millis(200),
         };
     }
 

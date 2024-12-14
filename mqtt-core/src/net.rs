@@ -18,7 +18,7 @@ pub async fn read_packet<
 >(
     stream: &mut S,
 ) -> Result<Option<MqttPacket>, E> {
-    let timeout_dur = Duration::from_millis(1);
+    let timeout_dur = Duration::from_micros(100);
     let fut1 = sleep(timeout_dur);
 
     // This is a little hackey, however it does allow us to escape the event loop without having a direct access to a poll function.
@@ -61,11 +61,10 @@ pub async fn unfused_read_packet<
     let mut header_buf = Bytes::copy_from_slice(&header_buf[0..i + 1]);
     f_header = FixedHeader::decode(&mut header_buf)?;
 
-    // println!("rest len: {}", f_header.rest_len());
-
     let mut buf = BytesMut::new();
     buf.resize(f_header.rest_len(), 0);
 
+    // extract the variable header and payload then parse the variable header.
     stream.read_exact(&mut buf).await?;
     match decode_packet(f_header, &mut buf.into()) {
         Ok(packet) => {
@@ -76,27 +75,3 @@ pub async fn unfused_read_packet<
         }
     }
 }
-
-// pub async fn read_header<
-//     S: AsyncReadExt + AsyncWrite + Unpin,
-//     T: From<err::DecodeError> + From<io::Error>,
-// >(
-//     stream: &mut S,
-//     buf: [u8; 5],
-// ) -> Result<(FixedHeader, Bytes), T> {
-//     // read the header bytes
-//     let mut buf = Bytes::from_iter(buf);
-
-//     let f_header = FixedHeader::decode(&mut buf)?;
-
-//     // Allocate a buf with the provided packet length.
-//     let mut buf_mut = BytesMut::with_capacity(f_header.header_len() + f_header.rest_len());
-
-//     // read the rest of the packet into the buf.
-//     stream.read_buf(&mut buf_mut).await?;
-
-//     // advance the header bytes.
-//     buf_mut.advance(f_header.header_len());
-
-//     return Ok((f_header, buf_mut.into()));
-// }

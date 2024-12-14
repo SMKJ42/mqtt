@@ -9,7 +9,7 @@ use mqtt_core::{
     topics::TopicFilter,
     v3::{ConnectPacket, MqttPacket, PublishPacket, SubscribePacket},
 };
-use tokio::{net::TcpStream, time::sleep};
+use tokio::net::TcpStream;
 
 #[tokio::main]
 async fn main() {
@@ -61,7 +61,6 @@ async fn main() {
             last_ping = Instant::now();
             client.ping().await.unwrap();
         }
-        sleep(Duration::from_millis(1)).await;
         if let Some(packet) = client.recv_packet().await.unwrap() {
             match packet {
                 MqttPacket::Publish(packet) => match packet.qos() {

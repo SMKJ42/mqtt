@@ -20,6 +20,6 @@ async fn main() {
     let packet = ConnectPacket::new(false, 10, String::from("pub_id_1"), Some(will), None, None);
     client.connect(packet).await.unwrap();
 
-    // test to see if the will is published / retained.
+    // check other clients to see if the will is published / retained.
     panic!();
 }

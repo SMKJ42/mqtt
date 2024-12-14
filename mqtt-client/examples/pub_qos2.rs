@@ -30,7 +30,7 @@ async fn main() {
 
     loop {
         if should_send {
-            sleep(Duration::from_millis(50)).await;
+            sleep(Duration::from_millis(10)).await;
             let id = client.next_packet_id().unwrap();
             let mut packet = PublishPacket::new(
                 &topic_name,

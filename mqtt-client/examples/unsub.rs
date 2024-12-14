@@ -49,8 +49,6 @@ async fn main() {
     let dur = Duration::from_secs(5);
 
     loop {
-        // prevent successive calls to the stream.
-
         if let Some(time) = start {
             if Instant::now().duration_since(time) > dur {
                 let packet =
