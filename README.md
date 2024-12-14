@@ -13,7 +13,7 @@ The primary goal of this repository is to provide a robust MQTT Broker / Client 
 
 ### Currently supports:
 
--   MQTT V3.1.1
+-   MQTT v3.1.1
 -   TLS connections
 -   Client initiated QoS level downgrading for Subscribers.
 -   In memory Disconnected sessions.
@@ -21,8 +21,8 @@ The primary goal of this repository is to provide a robust MQTT Broker / Client 
 
 ### Currently does not Support:
 
--   MQTT V5
--   MQTT-SN (V1.2)
+-   MQTT v5
+-   MQTT-SN (v1.2)
 -   Broker initiated QoS level downgrading.
 -   On disk Disconnected sessions.
 -   Client authentication.
