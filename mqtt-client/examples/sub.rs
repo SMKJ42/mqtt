@@ -6,7 +6,7 @@ use std::{
 use mqtt_client::r#async::AsyncClient;
 use mqtt_core::{
     qos::QosLevel,
-    topics::TopicFilter,
+    topic::TopicFilter,
     v3::{ConnectPacket, MqttPacket, PublishPacket, SubscribePacket},
 };
 use tokio::net::TcpStream;

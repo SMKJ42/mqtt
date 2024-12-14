@@ -15,7 +15,7 @@ use mqtt_core::{
     err::server::{self, ServerError},
     net::read_packet,
     qos::{QosLevel, SubAckQoS},
-    topics::{TopicFilter, TopicName},
+    topic::{TopicFilter, TopicName},
     v3::{
         ConnAckPacket, FilterResult, MqttPacket, PingRespPacket, PubAckPacket, PubCompPacket,
         PublishPacket, SubAckPacket, UnsubAckPacket,

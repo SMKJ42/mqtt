@@ -1,43 +1,19 @@
 use futures::executor::block_on;
 use mqtt_core::net::read_packet;
-use mqtt_core::v3::{
-    ConnectPacket, DisconnectPacket, MqttPacket, PingReqPacket, PubAckPacket, PubCompPacket,
-    PubRecPacket, PubRelPacket, PublishPacket, SubscribePacket, UnsubscribePacket,
-};
 use mqtt_core::{
     err::client::{self, ClientError},
     id::{IdGenType, IdGenerator},
+    v3::{
+        ConnectPacket, DisconnectPacket, MqttPacket, PingReqPacket, PubAckPacket, PubCompPacket,
+        PubRecPacket, PubRelPacket, PublishPacket, SubscribePacket, UnsubscribePacket,
+    },
 };
 
-use tokio::io::{AsyncRead, AsyncWrite, BufReader};
-use tokio::{io::AsyncWriteExt, net::TcpStream};
-use tokio_rustls::client::TlsStream;
-
-pub trait Disconnect {
-    #[allow(async_fn_in_trait)]
-    /// Use this function when a client is intending to shutdown.
-    async fn disconnect(&mut self) -> Result<(), ClientError>;
-}
-
-impl Disconnect for TcpStream {
-    async fn disconnect(&mut self) -> Result<(), ClientError> {
-        let disconnect_packet = DisconnectPacket::new();
-        self.write_all(&disconnect_packet.encode()).await?;
-        return Ok(());
-    }
-}
-
-impl Disconnect for TlsStream<TcpStream> {
-    async fn disconnect(&mut self) -> Result<(), ClientError> {
-        let disconnect_packet = DisconnectPacket::new();
-        self.write_all(&disconnect_packet.encode()).await?;
-        return Ok(());
-    }
-}
+use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
 
 pub struct AsyncClient<T>
 where
-    T: AsyncRead + AsyncWriteExt + Unpin + Disconnect,
+    T: AsyncRead + AsyncWriteExt + Unpin,
 {
     stream: BufReader<T>,
     id_gen: IdGenerator,
@@ -45,7 +21,7 @@ where
 
 impl<T> AsyncClient<T>
 where
-    T: AsyncRead + AsyncWrite + Unpin + Disconnect,
+    T: AsyncRead + AsyncWrite + Unpin,
 {
     pub fn new(stream: T) -> Self {
         return Self {
@@ -137,12 +113,14 @@ where
     }
 
     pub async fn disconnect(&mut self) -> Result<(), ClientError> {
-        self.stream.get_mut().disconnect().await
+        let disconnect_packet = DisconnectPacket::new();
+        self.stream.write_all(&disconnect_packet.encode()).await?;
+        return Ok(());
     }
 }
 
-impl<T: AsyncRead + AsyncWrite + Unpin + Disconnect> Drop for AsyncClient<T> {
+impl<T: AsyncRead + AsyncWrite + Unpin> Drop for AsyncClient<T> {
     fn drop(&mut self) {
-        block_on(self.stream.get_mut().disconnect()).unwrap();
+        block_on(self.disconnect()).unwrap();
     }
 }

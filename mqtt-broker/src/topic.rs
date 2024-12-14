@@ -1,4 +1,4 @@
-use mqtt_core::{topics::TopicName, v3::PublishPacket};
+use mqtt_core::{topic::TopicName, v3::PublishPacket};
 use std::{
     collections::{hash_map, HashMap},
     sync::Arc,

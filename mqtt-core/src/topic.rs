@@ -258,7 +258,7 @@ impl TopicToken {
 #[cfg(test)]
 mod parsing {
 
-    use crate::topics::TopicName;
+    use crate::topic::TopicName;
 
     use super::TopicFilter;
 

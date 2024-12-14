@@ -1,7 +1,7 @@
 use bytes::Bytes;
 use mqtt_client::r#async::AsyncClient;
 use mqtt_core::{
-    topics::TopicName,
+    topic::TopicName,
     v3::{ConnectPacket, PublishPacket},
 };
 use tokio::net::TcpStream;

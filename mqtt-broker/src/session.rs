@@ -2,7 +2,7 @@ use bytes::{BufMut, BytesMut};
 use mqtt_core::err::server::ServerError;
 use mqtt_core::id::{IdGenType, IdGenerator};
 use mqtt_core::qos::QosLevel;
-use mqtt_core::topics::TopicFilter;
+use mqtt_core::topic::TopicFilter;
 use std::{collections::HashMap, sync::Arc, time::Instant};
 use tokio::io::{AsyncWrite, AsyncWriteExt};
 

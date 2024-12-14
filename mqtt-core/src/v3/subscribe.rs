@@ -2,7 +2,7 @@ use crate::{
     err::{DecodeError, EncodeError},
     io::{encode_packet_length, encode_utf8},
     qos::QosLevel,
-    topics::TopicFilter,
+    topic::TopicFilter,
     v3::PacketType,
 };
 use bytes::{Buf, BufMut, Bytes, BytesMut};
@@ -132,7 +132,7 @@ mod packet {
     use super::SubscribePacket;
     use crate::{
         qos::QosLevel,
-        topics::TopicFilter,
+        topic::TopicFilter,
         v3::{FixedHeader, MqttPacket},
     };
     use bytes::Buf;

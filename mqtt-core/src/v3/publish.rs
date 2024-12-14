@@ -2,7 +2,7 @@ use crate::{
     err::{DecodeError, EncodeError},
     io::{decode_utf8, encode_packet_length, encode_utf8},
     qos::QosLevel,
-    topics::TopicName,
+    topic::TopicName,
     v3::{FixedHeader, PacketType},
 };
 use bytes::{Buf, BufMut, Bytes, BytesMut};
@@ -297,7 +297,7 @@ impl PublishFixedHeaderFlags {
 #[cfg(test)]
 mod packet {
     use super::PublishPacket;
-    use crate::topics::TopicName;
+    use crate::topic::TopicName;
     use crate::v3::{FixedHeader, MqttPacket};
     use bytes::Buf;
     use bytes::Bytes;

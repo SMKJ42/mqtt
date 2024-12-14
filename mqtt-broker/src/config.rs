@@ -4,7 +4,6 @@ use std::{fs::File, io::Read, path::Path};
 
 use serde::Deserialize;
 
-// TODO: This will get unwildy really fast... needs some cleanup
 #[derive(Deserialize)]
 pub struct MqttConfig {
     connection: Connection,

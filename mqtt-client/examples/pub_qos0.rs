@@ -3,7 +3,7 @@ use std::time::Duration;
 use bytes::Bytes;
 use mqtt_client::r#async::AsyncClient;
 use mqtt_core::{
-    topics::TopicName,
+    topic::TopicName,
     v3::{ConnectPacket, PublishPacket, Will},
 };
 use tokio::{net::TcpStream, time::sleep};

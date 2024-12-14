@@ -3,7 +3,7 @@ use crate::v3::PacketType;
 use crate::{
     io::{decode_bytes, decode_utf8, encode_bytes, encode_packet_length, encode_utf8},
     qos::QosLevel,
-    topics::TopicName,
+    topic::TopicName,
 };
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use core::fmt::Debug;
