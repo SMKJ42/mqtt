@@ -6,7 +6,7 @@ use std::{
     time::Duration,
 };
 
-use crate::{config::MqttConfig, logger::BrokerLoger};
+use crate::{config::MqttConfig, logger::BrokerLogger};
 
 pub struct MqttEnv {
     config: MqttConfig,
@@ -15,7 +15,7 @@ pub struct MqttEnv {
 impl MqttEnv {
     pub fn init_env(self) -> Self {
         if self.config.should_log_file() || self.config.should_log_console() {
-            let _logger = BrokerLoger::new(&self.config).init().unwrap();
+            let _logger = BrokerLogger::new(&self.config).init().unwrap();
             if self.config.should_log_file() {
                 init_log_fs();
             }

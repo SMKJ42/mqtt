@@ -14,6 +14,7 @@ pub struct MqttConfig {
     connection: Connection,
     users: Users,
     logger: Logger,
+    broker: Broker,
 }
 
 impl MqttConfig {
@@ -44,6 +45,10 @@ impl MqttConfig {
 
     pub fn require_auth(&self) -> bool {
         return self.users.authenticate;
+    }
+
+    pub fn max_queued_messages(&self) -> usize {
+        return self.broker.max_queued_messages;
     }
 }
 
@@ -105,4 +110,9 @@ pub struct Users {
 pub struct Logger {
     console: bool,
     file: bool,
+}
+
+#[derive(Deserialize)]
+pub struct Broker {
+    max_queued_messages: usize,
 }

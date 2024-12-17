@@ -54,8 +54,8 @@ impl MqttServer {
     fn new(config: MqttConfig) -> Self {
         MqttServer {
             auth_manager: AuthManager::new(config.user_db()),
+            topics: Arc::new(RwLock::new(ServerTopics::new(config.max_queued_messages()))),
             config: config,
-            topics: Arc::new(RwLock::new(ServerTopics::new())),
             dc_sessions: Arc::new(Mutex::new(DisconnectedSessions::new())),
         }
     }

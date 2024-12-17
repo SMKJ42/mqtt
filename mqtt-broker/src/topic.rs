@@ -8,17 +8,20 @@ use tokio::sync::broadcast;
 #[derive(Debug)]
 pub struct ServerTopics {
     topics: HashMap<TopicName, ServerTopic>,
+    max_queued_messages: usize,
 }
 
 impl ServerTopics {
-    pub fn new() -> Self {
+    pub fn new(max_queued_messages: usize) -> Self {
         return Self {
             topics: HashMap::new(),
+            max_queued_messages,
         };
     }
 
     pub fn create_topic(&mut self, topic_name: TopicName) {
-        self.topics.insert(topic_name, ServerTopic::new());
+        self.topics
+            .insert(topic_name, ServerTopic::new(self.max_queued_messages));
     }
 
     pub fn retain_message(&mut self, packet: PublishPacket) {
@@ -28,7 +31,7 @@ impl ServerTopics {
                 channel.retain_message(packet);
             }
             None => {
-                let mut topic = ServerTopic::new();
+                let mut topic = ServerTopic::new(self.max_queued_messages);
                 topic.retain_message(packet);
                 self.topics.insert(topic_name, topic);
             }
@@ -51,10 +54,9 @@ pub struct ServerTopic {
 }
 
 impl ServerTopic {
-    pub fn new() -> Self {
+    pub fn new(size: usize) -> Self {
         return Self {
-            // TODO: dynamically set this value from the config file.
-            channel: broadcast::Sender::new(128),
+            channel: broadcast::Sender::new(size),
             retained_message: None,
         };
     }

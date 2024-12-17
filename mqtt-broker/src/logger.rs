@@ -9,7 +9,7 @@ use time::{format_description::FormatItem, OffsetDateTime};
 
 use crate::config::MqttConfig;
 
-pub struct BrokerLoger {
+pub struct BrokerLogger {
     write_file: bool,
     write_console: bool,
 }
@@ -18,7 +18,7 @@ const TIMESTAMP_FORMAT_UTC: &[FormatItem] = time::macros::format_description!(
     "[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z"
 );
 
-impl log::Log for BrokerLoger {
+impl log::Log for BrokerLogger {
     fn enabled(&self, metadata: &Metadata) -> bool {
         metadata.level() <= Level::Info
     }
@@ -61,7 +61,7 @@ impl log::Log for BrokerLoger {
     fn flush(&self) {}
 }
 
-impl BrokerLoger {
+impl BrokerLogger {
     fn log_file(&self, record: &Record, colorized_level_string: &str, timestamp: &str) {
         let log_string = format!("{};{};{}\n", record.level(), record.args(), timestamp);
 
@@ -117,7 +117,7 @@ impl BrokerLoger {
     }
 }
 
-impl BrokerLoger {
+impl BrokerLogger {
     pub fn new(config: &MqttConfig) -> Self {
         return Self {
             write_file: config.should_log_file(),
