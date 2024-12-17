@@ -400,6 +400,14 @@ impl ConnectPacket {
     pub fn clean_session(&self) -> bool {
         return self.conn_flags.clean_session();
     }
+
+    pub fn username(&self) -> &Option<String> {
+        return &self.username;
+    }
+
+    pub fn password(&self) -> &Option<Bytes> {
+        return &self.password;
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

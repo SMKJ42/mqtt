@@ -27,13 +27,13 @@ async fn main() {
         .with_root_certificates(root_cert_store)
         .with_no_client_auth(); // i guess this was previously the default?
     let connector = TlsConnector::from(Arc::new(config));
-
     let domain = ServerName::try_from(domain).unwrap().to_owned();
+
     let stream = connector.connect(domain, stream).await.unwrap();
 
-    let packet = ConnectPacket::new(false, 10, String::from("test_id"), None, None, None);
     let mut client = AsyncClient::new(stream);
 
+    let packet = ConnectPacket::new(false, 10, String::from("test_id"), None, None, None);
     client.connect(packet).await.unwrap();
 
     let mut dur = Duration::from_secs(0);

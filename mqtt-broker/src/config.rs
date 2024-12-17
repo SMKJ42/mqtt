@@ -1,12 +1,18 @@
 use core::net::Ipv4Addr;
 
-use std::{fs::File, io::Read, path::Path};
+use std::{
+    fs::File,
+    io::Read,
+    path::{Path, PathBuf},
+    str::FromStr,
+};
 
 use serde::Deserialize;
 
 #[derive(Deserialize)]
 pub struct MqttConfig {
     connection: Connection,
+    users: Users,
     logger: Logger,
 }
 
@@ -25,6 +31,19 @@ impl MqttConfig {
 
     pub fn should_log_console(&self) -> bool {
         return self.logger.console;
+    }
+
+    pub fn user_db(&self) -> PathBuf {
+        match &self.users.user_db_path {
+            Some(path) => {
+                PathBuf::from_str(&path).expect(&format!("Invalid user database path: {path}"))
+            }
+            None => PathBuf::from_str("users.db").unwrap(),
+        }
+    }
+
+    pub fn require_auth(&self) -> bool {
+        return self.users.authenticate;
     }
 }
 
@@ -51,12 +70,18 @@ impl TryFrom<&Path> for MqttConfig {
 
         let config: MqttConfig = toml::from_str(&buf)?;
 
+        // warn for invalid port configurations.
         if config.connection.tls {
             if config.connection.port == 1883 {
                 log::warn!("Creating TLS connection on port 1883. This port is reserved for Plaintext MQTT connections.");
             }
         } else if config.connection.port == 8883 {
             log::warn!("Creating Plaintext connection on port 8883. This port is reserved for TLS MQTT connections.");
+        }
+
+        // warn for sending plaintext credentials.
+        if config.users.authenticate && config.connection.tls == false {
+            log::warn!("Requiring client to send credentials in the clear. Please change the configuration if this is not intended.")
         }
 
         return Ok(config);
@@ -68,6 +93,12 @@ struct Connection {
     tls: bool,
     ip: Ipv4Addr,
     port: u16,
+}
+
+#[derive(Deserialize)]
+pub struct Users {
+    authenticate: bool,
+    user_db_path: Option<String>,
 }
 
 #[derive(Deserialize)]

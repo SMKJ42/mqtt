@@ -5,6 +5,7 @@ mod mailbox;
 mod session;
 mod topic;
 
+use core::str;
 use std::{path::PathBuf, sync::Arc};
 
 use bytes::Bytes;
@@ -34,7 +35,7 @@ use rustls::pki_types::{pem::PemObject, CertificateDer, PrivateKeyDer};
 use tokio_rustls::TlsAcceptor;
 
 use mailbox::{Mail, Mailbox};
-use session::{ActiveSession, DisconnectedSessions};
+use session::{ActiveSession, AuthManager, DisconnectedSessions};
 use topic::ServerTopics;
 
 struct MqttServer {
@@ -45,12 +46,14 @@ struct MqttServer {
     // Mutex is only locked when a client disconnects or connects.
     // Should this be a tokio mutex or a std mutex? Contention will probably be higher than topics though...
     dc_sessions: Arc<Mutex<DisconnectedSessions>>,
+    auth_manager: AuthManager,
 }
 
 impl MqttServer {
     /// Creates a new MqttServer instance holding a mutex to topics and a mutex to disconnected sessions.
     fn new(config: MqttConfig) -> Self {
         MqttServer {
+            auth_manager: AuthManager::new(config.user_db()),
             config: config,
             topics: Arc::new(RwLock::new(ServerTopics::new())),
             dc_sessions: Arc::new(Mutex::new(DisconnectedSessions::new())),
@@ -72,6 +75,7 @@ impl MqttServer {
     }
 
     async fn start_plaintext(self, listener: TcpListener) {
+        let authenticate = self.config.require_auth();
         let server = Arc::new(self);
         loop {
             server.clean_expired_sessions().await;
@@ -84,7 +88,9 @@ impl MqttServer {
                     // let mut stream = BufReader::new(stream);
 
                     tokio::spawn(async move {
-                        if let Err(err) = handle_client(server_clone, &mut stream).await {
+                        if let Err(err) =
+                            handle_client(server_clone, &mut stream, authenticate).await
+                        {
                             log::error!("Error handling client: {err}");
                             log::warn!("Closing connection: {addr}")
                         } else {
@@ -101,6 +107,7 @@ impl MqttServer {
     }
 
     async fn start_tls(self, listener: TcpListener) {
+        let authenticate = self.config.require_auth();
         let server = Arc::new(self);
 
         let certs = CertificateDer::pem_file_iter("tls/cert.pem")
@@ -140,7 +147,9 @@ impl MqttServer {
                     let mut tls_stream = BufReader::new(tls_stream);
 
                     tokio::spawn(async move {
-                        if let Err(err) = handle_client(server_clone, &mut tls_stream).await {
+                        if let Err(err) =
+                            handle_client(server_clone, &mut tls_stream, authenticate).await
+                        {
                             log::error!("Error handling client: {err}");
                             log::warn!("Closing connection: {addr}")
                         } else {
@@ -284,8 +293,9 @@ impl MqttServer {
 async fn handle_client<S: AsyncReadExt + AsyncWrite + Unpin>(
     server: Arc<MqttServer>,
     stream: &mut S,
+    authenticate: bool,
 ) -> Result<(), ServerError> {
-    let active_session = establish_session(&server, stream).await?;
+    let active_session = establish_session(&server, stream, authenticate).await?;
 
     log::info!("connected");
 
@@ -330,6 +340,7 @@ async fn handle_client<S: AsyncReadExt + AsyncWrite + Unpin>(
 async fn establish_session<S: AsyncWriteExt + AsyncReadExt + Unpin>(
     server: &Arc<MqttServer>,
     stream: &mut S,
+    authenticate: bool,
 ) -> Result<Option<ActiveSession>, ServerError> {
     loop {
         match read_packet::<_, ServerError>(stream).await {
@@ -349,6 +360,20 @@ async fn establish_session<S: AsyncWriteExt + AsyncReadExt + Unpin>(
                             MqttPacket::Connect(packet) => {
                                 let mut sessions = server.dc_sessions.lock().await;
                                 let mut connack = ConnAckPacket::new(false, ConnectReturnCode::Accept);
+
+                                // authenticate the request
+                                if authenticate {
+                                    match (packet.username(), packet.password()) {
+                                        (Some(username), Some(password)) => {
+                                            let password = str::from_utf8(&password).unwrap();
+                                            server.auth_manager.verify_credentials(username, password)?;
+                                        }
+                                        _ => {
+                                            // TODO: create better error handling for this event...
+                                            panic!("no username or password provided.");
+                                        }
+                                    }
+                                }
 
                                 // Check if the server has a session history.
                                 if let Some(dc_session) = sessions.remove_session(packet.client_id()) {

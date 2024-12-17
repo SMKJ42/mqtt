@@ -5,3 +5,4 @@
 mqtt-broker/logs
 .DS_Store
 config.toml
+*.db

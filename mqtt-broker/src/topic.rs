@@ -53,7 +53,8 @@ pub struct ServerTopic {
 impl ServerTopic {
     pub fn new() -> Self {
         return Self {
-            channel: broadcast::Sender::new(32),
+            // TODO: dynamically set this value from the config file.
+            channel: broadcast::Sender::new(128),
             retained_message: None,
         };
     }

@@ -3,6 +3,13 @@ use mqtt_core::err::server::ServerError;
 use mqtt_core::id::{IdGenType, IdGenerator};
 use mqtt_core::qos::QosLevel;
 use mqtt_core::topic::TopicFilter;
+use r2d2_sqlite::SqliteConnectionManager;
+use sheesh::harness::sqlite::user::SqliteHarnessUser;
+use sheesh::harness::stateless::{StatelessSession, StatelessToken};
+use sheesh::harness::DbHarness;
+use sheesh::id::DefaultIdGenerator;
+use sheesh::session::{SessionManager, SessionManagerConfig};
+use std::path::PathBuf;
 use std::{collections::HashMap, sync::Arc, time::Instant};
 use tokio::io::{AsyncWrite, AsyncWriteExt};
 
@@ -276,5 +283,95 @@ impl DisconnectedSessions {
 
     pub fn remove_session(&mut self, id: &str) -> Option<DisconnectedSession> {
         return self.dc_sessions.remove(id);
+    }
+}
+
+/*
+ *
+ *  ---------- USER AUTHENTICATION ----------
+ *
+ */
+
+use std::fmt::Display;
+
+use sheesh::user::{
+    PrivateUserMeta, PublicUserMeta, Role, UserManager, UserManagerConfig, UserManagerError,
+    UserManagerErrorKind,
+};
+
+// the following trait impls create type safety for you across the application.
+pub enum Roles {
+    Admin,
+}
+
+impl Roles {
+    pub fn to_string(&self) -> String {
+        match self {
+            Self::Admin => return String::from("admin"),
+        }
+    }
+
+    pub fn as_role(&self) -> Role {
+        return Role::from_string(self.to_string());
+    }
+}
+
+impl Display for Roles {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Admin => {
+                write!(f, "admin")
+            }
+        }
+    }
+}
+#[derive(Clone)]
+pub struct MyPublicUserMetadata;
+impl PublicUserMeta for MyPublicUserMetadata {
+    // fn from_values(values: &mut slice::Iter<'_, String>) -> Option<Self> {
+    //     None
+    // }
+    // fn into_values(&self) -> Vec<String> {
+    //     vec![]
+    // }
+}
+
+#[derive(Clone)]
+pub struct MyPrivateUserMetadata;
+impl PrivateUserMeta for MyPrivateUserMetadata {
+    // fn from_values(values: &mut slice::Iter<'_, String>) -> Option<Self> {
+    //     None
+    // }
+    // fn into_values(&self) -> Vec<String> {
+    //     vec![]
+    // }
+}
+
+pub struct AuthManager {
+    user: UserManager<DefaultIdGenerator, SqliteHarnessUser>,
+    session: SessionManager<DefaultIdGenerator, StatelessSession, StatelessToken>,
+}
+
+impl AuthManager {
+    pub fn new(path: PathBuf) -> Self {
+        let conn_manager = SqliteConnectionManager::file(path);
+        let pool = r2d2::Pool::new(conn_manager).unwrap();
+        let harness = DbHarness::new_stateless_sqlite(pool);
+
+        harness.init_tables().unwrap();
+
+        let user = UserManagerConfig::default().init(harness.user);
+        let session = SessionManagerConfig::default().init(harness.session, harness.token);
+
+        return Self { user, session };
+    }
+
+    pub fn verify_credentials(&self, username: &str, pwd: &str) -> Result<(), ServerError> {
+        match self.user.login(&self.session, username, pwd) {
+            Ok((_, _)) => return Ok(()),
+            Err(err) => {
+                todo!();
+            }
+        }
     }
 }
