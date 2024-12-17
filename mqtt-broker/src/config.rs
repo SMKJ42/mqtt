@@ -8,9 +8,9 @@ use std::{
 };
 
 use log::LevelFilter;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize, Default)]
 pub struct MqttConfig {
     connection: Connection,
     users: Users,
@@ -101,27 +101,64 @@ impl TryFrom<&Path> for MqttConfig {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 struct Connection {
     tls: bool,
     ip: Ipv4Addr,
     port: u16,
 }
 
-#[derive(Deserialize)]
+impl Default for Connection {
+    fn default() -> Self {
+        return Self {
+            tls: false,
+            ip: Ipv4Addr::new(127, 0, 0, 1),
+            port: 1883,
+        };
+    }
+}
+
+#[derive(Deserialize, Serialize)]
 pub struct Users {
     authenticate: bool,
     user_db_path: Option<String>,
 }
 
-#[derive(Deserialize)]
+impl Default for Users {
+    fn default() -> Self {
+        return Self {
+            authenticate: false,
+            user_db_path: None,
+        };
+    }
+}
+
+#[derive(Deserialize, Serialize)]
 pub struct Logger {
     console: bool,
     file: bool,
     level: String,
 }
 
-#[derive(Deserialize)]
+impl Default for Logger {
+    fn default() -> Self {
+        return Self {
+            console: true,
+            file: true,
+            level: String::from("trace"),
+        };
+    }
+}
+
+#[derive(Deserialize, Serialize)]
 pub struct Broker {
     max_queued_messages: usize,
+}
+
+impl Default for Broker {
+    fn default() -> Self {
+        return Self {
+            max_queued_messages: 128,
+        };
+    }
 }

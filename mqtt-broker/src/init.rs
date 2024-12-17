@@ -6,6 +6,8 @@ use std::{
     time::Duration,
 };
 
+use serde::Serialize;
+
 use crate::{config::MqttConfig, logger::BrokerLogger};
 
 pub struct MqttEnv {
@@ -160,14 +162,8 @@ const CONFIG_PATH: &'static str = "config.toml";
 pub fn init_config() {
     let config_path = Path::new(CONFIG_PATH);
     if !config_path.exists() {
-        let contents = r#"
-[connection]
-tls = false
-ip = "127.0.0.1"
-port = 1883
-"#;
-
-        fs::write(CONFIG_PATH, contents).expect("Could not create config file");
+        let config_content = toml::to_string_pretty(&MqttConfig::default()).unwrap();
+        fs::write(CONFIG_PATH, config_content).expect("Could not create config file");
         log::info!("Initialized new config file.")
     }
 }
