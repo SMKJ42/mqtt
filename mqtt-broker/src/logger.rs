@@ -4,7 +4,7 @@ use std::{
 };
 
 use colored::*;
-use log::{Level, Metadata, Record, SetLoggerError};
+use log::{Level, LevelFilter, Metadata, Record, SetLoggerError};
 use time::{format_description::FormatItem, OffsetDateTime};
 
 use crate::config::MqttConfig;
@@ -125,8 +125,8 @@ impl BrokerLogger {
         };
     }
 
-    pub fn init(self) -> Result<(), SetLoggerError> {
-        log::set_max_level(log::LevelFilter::Info);
+    pub fn init(self, level: LevelFilter) -> Result<(), SetLoggerError> {
+        log::set_max_level(level);
         log::set_boxed_logger(Box::new(self))
     }
 }

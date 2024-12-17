@@ -1122,7 +1122,7 @@ dependencies = [
 [[package]]
 name = "sheesh"
 version = "0.1.0"
-source = "git+https://github.com/SMKJ42/sheesh-auth.git?branch=main#7e6b00f0dad0e2311140dec368ab600312b7eaf8"
+source = "git+https://github.com/SMKJ42/sheesh-auth.git?branch=main#c95b866ac4d857da40e106e85a7868d9f9e62aa8"
 dependencies = [
  "chrono",
  "r2d2",

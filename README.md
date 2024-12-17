@@ -21,6 +21,7 @@ The primary goal of this repository is to provide a robust MQTT Broker / Client 
 -   Client authentication.
 -   Client authoriziation.
 -   Creating topics at program initialization (Client must Pub before other clients can Sub).
+-   Broker bridging (I am delaying this until I decide on how to scale the broker network).
 
 ### Features:
 

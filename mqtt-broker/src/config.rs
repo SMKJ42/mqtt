@@ -7,6 +7,7 @@ use std::{
     str::FromStr,
 };
 
+use log::LevelFilter;
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -49,6 +50,13 @@ impl MqttConfig {
 
     pub fn max_queued_messages(&self) -> usize {
         return self.broker.max_queued_messages;
+    }
+
+    pub fn log_level(&self) -> LevelFilter {
+        return LevelFilter::from_str(&self.logger.level).expect(&format!(
+            "Invalid log level provided: {}. Accepted levels are: Off, Error, Warn, Info, Debug",
+            self.logger.level
+        ));
     }
 }
 
@@ -110,6 +118,7 @@ pub struct Users {
 pub struct Logger {
     console: bool,
     file: bool,
+    level: String,
 }
 
 #[derive(Deserialize)]

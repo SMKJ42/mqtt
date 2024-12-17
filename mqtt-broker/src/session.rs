@@ -296,7 +296,7 @@ use std::fmt::Display;
 
 use sheesh::user::{
     PrivateUserMeta, PublicUserMeta, Role, UserManager, UserManagerConfig, UserManagerError,
-    UserManagerErrorKind,
+    UserManagerErrorKind, UserMeta,
 };
 
 // the following trait impls create type safety for you across the application.
@@ -366,9 +366,9 @@ impl AuthManager {
         return Self { user, session };
     }
 
-    pub fn verify_credentials(&self, username: &str, pwd: &str) -> Result<(), ServerError> {
+    pub fn verify_credentials(&self, username: &str, pwd: &str) -> Result<UserMeta, ServerError> {
         match self.user.login(&self.session, username, pwd) {
-            Ok((_, _)) => return Ok(()),
+            Ok((user, _, _)) => return Ok(user),
             Err(err) => {
                 todo!();
             }
