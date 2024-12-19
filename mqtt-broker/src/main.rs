@@ -24,6 +24,7 @@ use mqtt_core::{
     ConnectReturnCode,
 };
 
+use sheesh::user::UserMeta;
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader},
     join,
@@ -51,7 +52,7 @@ struct MqttServer {
 
 impl MqttServer {
     /// Creates a new MqttServer instance holding a mutex to topics and a mutex to disconnected sessions.
-    fn new(config: MqttConfig) -> Self {
+    pub fn new(config: MqttConfig) -> Self {
         MqttServer {
             auth_manager: AuthManager::new(config.user_db()),
             topics: Arc::new(RwLock::new(ServerTopics::new(config.max_queued_messages()))),
@@ -75,7 +76,6 @@ impl MqttServer {
     }
 
     async fn start_plaintext(self, listener: TcpListener) {
-        let authenticate = self.config.require_auth();
         let server = Arc::new(self);
         loop {
             server.clean_expired_sessions().await;
@@ -88,26 +88,21 @@ impl MqttServer {
                     // let mut stream = BufReader::new(stream);
 
                     tokio::spawn(async move {
-                        if let Err(err) =
-                            handle_client(server_clone, &mut stream, authenticate).await
-                        {
-                            log::error!("Error handling client: {err}");
-                            log::warn!("Closing connection: {addr}")
+                        if let Err(err) = handle_client(server_clone, &mut stream).await {
+                            log::warn!("Error handling client: {err}, Closing connection: {addr}")
                         } else {
                             log::info!("Gracefully closing connection: {addr}")
                         }
                     });
                 }
                 Err(err) => {
-                    log::error!("{}", err);
-                    log::warn!("Rejected TCP connection.")
+                    log::error!("Rejected TCP connection: {}", err);
                 }
             }
         }
     }
 
     async fn start_tls(self, listener: TcpListener) {
-        let authenticate = self.config.require_auth();
         let server = Arc::new(self);
 
         let certs = CertificateDer::pem_file_iter("tls/cert.pem")
@@ -147,9 +142,7 @@ impl MqttServer {
                     let mut tls_stream = BufReader::new(tls_stream);
 
                     tokio::spawn(async move {
-                        if let Err(err) =
-                            handle_client(server_clone, &mut tls_stream, authenticate).await
-                        {
+                        if let Err(err) = handle_client(server_clone, &mut tls_stream).await {
                             log::error!("Error handling client: {err}");
                             log::warn!("Closing connection: {addr}")
                         } else {
@@ -293,9 +286,8 @@ impl MqttServer {
 async fn handle_client<S: AsyncReadExt + AsyncWrite + Unpin>(
     server: Arc<MqttServer>,
     stream: &mut S,
-    authenticate: bool,
 ) -> Result<(), ServerError> {
-    let active_session = establish_session(&server, stream, authenticate).await?;
+    let active_session = establish_session(&server, stream).await?;
 
     log::info!("connected");
 
@@ -340,7 +332,6 @@ async fn handle_client<S: AsyncReadExt + AsyncWrite + Unpin>(
 async fn establish_session<S: AsyncWriteExt + AsyncReadExt + Unpin>(
     server: &Arc<MqttServer>,
     stream: &mut S,
-    authenticate: bool,
 ) -> Result<Option<ActiveSession>, ServerError> {
     loop {
         match read_packet::<_, ServerError>(stream).await {
@@ -358,36 +349,41 @@ async fn establish_session<S: AsyncWriteExt + AsyncReadExt + Unpin>(
                             }
 
                             MqttPacket::Connect(packet) => {
-                                let mut sessions = server.dc_sessions.lock().await;
                                 let mut connack = ConnAckPacket::new(false, ConnectReturnCode::Accept);
 
                                 // authenticate the request
-                                if authenticate {
+                                /*
+                                 * TODO: the user is mut here becuase clippy isn't able to tell that the user can only be assigned once. 
+                                 * Maybe change the control flow for the function to safegaurd against inadvertant assignments to the user variable?
+                                 */
+                                let mut user: Option<UserMeta> = None;
+
+                                if server.config.require_auth() {
                                     match (packet.username(), packet.password()) {
                                         (Some(username), Some(password)) => {
                                             let password = str::from_utf8(&password).unwrap();
-                                            server.auth_manager.verify_credentials(username, password)?;
+                                            user = Some(server.auth_manager.verify_credentials(username, password)?);
                                         }
                                         _ => {
-                                            // TODO: create better error handling for this event...
-                                            panic!("no username or password provided.");
+                                            return Err(ServerError::new(server::ErrorKind::ConnectError(ConnectReturnCode::BadUsernameOrPassword), String::from("Client attempted to connect without provided a username or password")))
                                         }
                                     }
                                 }
 
+                                let mut sessions = server.dc_sessions.lock().await;
                                 // Check if the server has a session history.
                                 if let Some(dc_session) = sessions.remove_session(packet.client_id()) {
                                     if packet.clean_session() {
+                                        // The client requested a new session, drop the old session history and continue.
+                                        session = ActiveSession::new(packet, user);
+                                    } else {
                                         // The client requested to resume from a client's prior history.
                                         connack.set_session_present(true);
-                                        session = dc_session.into_active(packet);
-                                    } else {
-                                        // The client requested a new session, drop the old session history and continue.
-                                        session = ActiveSession::from_packet(packet);
+                                        session = dc_session.into_active(packet)?;
                                     }
                                 } else {
                                     // The server does not have any session history.
-                                    session = ActiveSession::from_packet(packet);
+                                    session = ActiveSession::new(packet, user);
                                 }
 
                                 stream.write_all(&connack.encode()).await?;

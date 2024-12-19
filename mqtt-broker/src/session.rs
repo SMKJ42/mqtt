@@ -1,8 +1,9 @@
 use bytes::{BufMut, BytesMut};
-use mqtt_core::err::server::ServerError;
+use mqtt_core::err::server::{self, ServerError};
 use mqtt_core::id::{IdGenType, IdGenerator};
 use mqtt_core::qos::QosLevel;
 use mqtt_core::topic::TopicFilter;
+use mqtt_core::ConnectReturnCode;
 use r2d2_sqlite::SqliteConnectionManager;
 use sheesh::harness::sqlite::user::SqliteHarnessUser;
 use sheesh::harness::stateless::{StatelessSession, StatelessToken};
@@ -24,6 +25,7 @@ pub type ExactlyOnceListType = ExactlyOnceList<Arc<PublishPacket>, Instant, Retr
 #[derive(Debug, Clone)]
 pub struct ActiveSession {
     client_id: String,
+    user: Option<UserMeta>,
     will: Option<Will>,
     keep_alive: u64,
     last_read: Instant,
@@ -34,9 +36,10 @@ pub struct ActiveSession {
 }
 
 impl ActiveSession {
-    pub fn from_packet(packet: ConnectPacket) -> Self {
-        Self {
+    pub fn new(packet: ConnectPacket, user: Option<UserMeta>) -> Self {
+        return Self {
             client_id: packet.client_id().to_string(),
+            user,
             will: packet.will,
             keep_alive: packet.keep_alive.into(),
             last_read: Instant::now(),
@@ -44,7 +47,7 @@ impl ActiveSession {
             qos1_packets: AtLeastOnceList::new(),
             qos2_packets: ExactlyOnceList::new(),
             id_gen: IdGenerator::new(IdGenType::Broker),
-        }
+        };
     }
 
     pub fn will(&self) -> &Option<Will> {
@@ -157,12 +160,15 @@ impl ActiveSession {
     pub fn comp(&mut self, packet_id: u16) {
         self.qos2_packets.complete(packet_id);
     }
-
-    // pub fn comp(&mut self, packet_id: u16)
 }
 
-impl From<(DisconnectedSession, ConnectPacket)> for ActiveSession {
-    fn from((dc_session, packet): (DisconnectedSession, ConnectPacket)) -> Self {
+// TODO:
+// Okay... this type signature is disgusting...
+impl TryFrom<(DisconnectedSession, ConnectPacket)> for ActiveSession {
+    type Error = ServerError;
+    fn try_from(
+        (dc_session, packet): (DisconnectedSession, ConnectPacket),
+    ) -> Result<Self, Self::Error> {
         let mut id_gen = IdGenerator::new(IdGenType::Broker);
 
         for packet in dc_session.qos1_packets.iter() {
@@ -173,8 +179,9 @@ impl From<(DisconnectedSession, ConnectPacket)> for ActiveSession {
             id_gen.set_id(packet.id());
         }
 
-        Self {
+        return Ok(Self {
             client_id: packet.client_id.to_owned(),
+            user: dc_session.user,
             will: packet.will.to_owned(),
             keep_alive: packet.keep_alive.into(),
             last_read: Instant::now(),
@@ -182,7 +189,7 @@ impl From<(DisconnectedSession, ConnectPacket)> for ActiveSession {
             id_gen,
             qos1_packets: dc_session.qos1_packets,
             qos2_packets: dc_session.qos2_packets,
-        }
+        });
     }
 }
 
@@ -190,6 +197,7 @@ impl From<ActiveSession> for DisconnectedSession {
     fn from(value: ActiveSession) -> Self {
         Self {
             client_id: value.client_id,
+            user: value.user,
             keep_alive: value.keep_alive,
             last_read: value.last_read,
             qos1_packets: value.qos1_packets,
@@ -204,7 +212,7 @@ impl From<ActiveSession> for DisconnectedSession {
 #[derive(Clone)]
 pub struct DisconnectedSession {
     client_id: String,
-    // these values represent packets that were sent after a disconnect.
+    user: Option<UserMeta>,
     keep_alive: u64,
     last_read: Instant,
     qos1_packets: AtLeastOnceListType,
@@ -236,8 +244,8 @@ impl DisconnectedSession {
         return self.client_id.as_str();
     }
 
-    pub fn into_active(self, packet: ConnectPacket) -> ActiveSession {
-        return ActiveSession::from((self, packet));
+    pub fn into_active(self, packet: ConnectPacket) -> Result<ActiveSession, ServerError> {
+        return ActiveSession::try_from((self, packet));
     }
 }
 
@@ -292,60 +300,7 @@ impl DisconnectedSessions {
  *
  */
 
-use std::fmt::Display;
-
-use sheesh::user::{
-    PrivateUserMeta, PublicUserMeta, Role, UserManager, UserManagerConfig, UserManagerError,
-    UserManagerErrorKind, UserMeta,
-};
-
-// the following trait impls create type safety for you across the application.
-pub enum Roles {
-    Admin,
-}
-
-impl Roles {
-    pub fn to_string(&self) -> String {
-        match self {
-            Self::Admin => return String::from("admin"),
-        }
-    }
-
-    pub fn as_role(&self) -> Role {
-        return Role::from_string(self.to_string());
-    }
-}
-
-impl Display for Roles {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Admin => {
-                write!(f, "admin")
-            }
-        }
-    }
-}
-#[derive(Clone)]
-pub struct MyPublicUserMetadata;
-impl PublicUserMeta for MyPublicUserMetadata {
-    // fn from_values(values: &mut slice::Iter<'_, String>) -> Option<Self> {
-    //     None
-    // }
-    // fn into_values(&self) -> Vec<String> {
-    //     vec![]
-    // }
-}
-
-#[derive(Clone)]
-pub struct MyPrivateUserMetadata;
-impl PrivateUserMeta for MyPrivateUserMetadata {
-    // fn from_values(values: &mut slice::Iter<'_, String>) -> Option<Self> {
-    //     None
-    // }
-    // fn into_values(&self) -> Vec<String> {
-    //     vec![]
-    // }
-}
+use sheesh::user::{UserManager, UserManagerConfig, UserMeta};
 
 pub struct AuthManager {
     user: UserManager<DefaultIdGenerator, SqliteHarnessUser>,
@@ -369,8 +324,11 @@ impl AuthManager {
     pub fn verify_credentials(&self, username: &str, pwd: &str) -> Result<UserMeta, ServerError> {
         match self.user.login(&self.session, username, pwd) {
             Ok((user, _, _)) => return Ok(user),
-            Err(err) => {
-                todo!();
+            Err(_) => {
+                return Err(ServerError::new(
+                    server::ErrorKind::ConnectError(ConnectReturnCode::BadUsernameOrPassword),
+                    String::from("Client attempted to connect with invalid credentials"),
+                ));
             }
         }
     }

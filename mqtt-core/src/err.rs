@@ -141,6 +141,8 @@ pub mod server {
 
     use tokio::io;
 
+    use crate::ConnectReturnCode;
+
     use super::{DecodeError, EncodeError};
 
     #[derive(Debug)]
@@ -157,7 +159,7 @@ pub mod server {
         ProtocolError,
         BroadcastError,
         FullMailbox(u64),
-        ReusedClientId,
+        ConnectError(ConnectReturnCode),
     }
 
     impl Display for ErrorKind {

@@ -63,7 +63,8 @@ impl log::Log for BrokerLogger {
 
 impl BrokerLogger {
     fn log_file(&self, record: &Record, colorized_level_string: &str, timestamp: &str) {
-        let log_string = format!("{};{};{}\n", record.level(), record.args(), timestamp);
+        // col delim is ';' row delim is ';\n'
+        let log_string = format!("{};{};{};\n", record.level(), record.args(), timestamp);
 
         match record.level() {
             Level::Trace => {
@@ -74,7 +75,7 @@ impl BrokerLogger {
                     file.write_all(log_string.as_bytes()).unwrap();
                 }
                 Err(err) => {
-                    let err = format!("{colorized_level_string} - Could not write Debug message to logs/debug.log\n\t{err}\n\t\t{}\n\t - {timestamp};", record.args().to_string().split(";").next().unwrap());
+                    let err = format!("{colorized_level_string} - Could not write Debug message to logs/debug.log\n\t{err}\n\t\t{}\n - {timestamp};", record.args().to_string().split(";").next().unwrap());
                     eprintln!("{}", err);
                     return;
                 }
@@ -85,7 +86,7 @@ impl BrokerLogger {
                         file.write_all(log_string.as_bytes()).unwrap();
                     }
                     Err(err) => {
-                        let err = format!("{} - Could not write Debug message to logs/error.log\n\t{err}\n\t\t{}\n\t - {timestamp};", Level::Debug.to_string().purple(), record.args().to_string().split(";").next().unwrap());
+                        let err = format!("{} - Could not write Debug message to logs/error.log\n\t{err}\n\t\t{}\n - {timestamp};", Level::Debug.to_string().purple(), record.args().to_string().split(";").next().unwrap());
                         log::debug!("{}", err);
                         eprintln!("{}", err);
                         return;
@@ -99,7 +100,7 @@ impl BrokerLogger {
                         file.write_all(log_string.as_bytes()).unwrap();
                     }
                     Err(err) => {
-                        let err = format!("{} - Could not write Debug message to logs/main.log\n\t{err}\n\t\t{}\n\t - {timestamp};", Level::Error.as_str().red(), record.args().to_string().split(";").next().unwrap());
+                        let err = format!("{} - Could not write Debug message to logs/main.log\n\t{err}\n\t\t{}\n - {timestamp};", Level::Error.as_str().red(), record.args().to_string().split(";").next().unwrap());
                         log::error!("{}", err);
                         eprintln!("{}", err);
                         return;

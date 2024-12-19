@@ -6,8 +6,6 @@ use std::{
     time::Duration,
 };
 
-use serde::Serialize;
-
 use crate::{config::MqttConfig, logger::BrokerLogger};
 
 pub struct MqttEnv {

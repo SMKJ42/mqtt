@@ -633,9 +633,9 @@ impl ConnectFlags {
 
     pub fn clean_session(&self) -> bool {
         if self.byte & CLEAN_SESSION == CLEAN_SESSION {
-            return true;
-        } else {
             return false;
+        } else {
+            return true;
         }
     }
 
