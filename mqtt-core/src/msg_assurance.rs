@@ -34,7 +34,7 @@ where
         let packet = ExactlyOncePacket::origin(packet, new_id);
         match self.inner.binary_search(&packet) {
             Ok(_idx) => {
-                // packet already exists.
+                // TODO: packet already exists.
                 todo!("Packet exists");
             }
             Err(idx) => {

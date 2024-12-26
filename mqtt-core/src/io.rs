@@ -234,13 +234,11 @@ pub async fn read_packet<
 >(
     stream: &mut S,
 ) -> Result<Option<MqttPacket>, E> {
-    let timeout_dur = Duration::from_micros(100);
-    let fut1 = sleep(timeout_dur);
-
     // This is a little hackey, however it does allow us to escape the event loop without having a direct access to a poll function.
     // Primarily useful for TLS stream types where the stream does not have a poll function.
+
     futures::select! {
-        _ = fut1.fuse() => {
+        _ = sleep(Duration::from_micros(100)).fuse() => {
             return Ok(None);
         }
         out = unfused_read_packet(stream).fuse() => {
@@ -282,6 +280,7 @@ pub async fn unfused_read_packet<
 
     // extract the variable header and payload then parse the variable header.
     stream.read_exact(&mut buf).await?;
+
     match decode_packet(f_header, &mut buf.into()) {
         Ok(packet) => {
             return Ok(Some(packet));

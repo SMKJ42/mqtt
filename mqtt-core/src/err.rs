@@ -65,11 +65,10 @@ pub enum DecodeErrorKind {
 }
 
 pub mod client {
+    use crate::err::{DecodeError, EncodeError};
     use std::fmt::Display;
 
     use tokio::io;
-
-    use super::{DecodeError, EncodeError};
 
     #[derive(Debug)]
     pub enum ErrorKind {
@@ -137,13 +136,12 @@ pub mod client {
 }
 
 pub mod server {
+    use crate::{
+        err::{DecodeError, EncodeError},
+        ConnectReturnCode,
+    };
     use std::fmt::Display;
-
     use tokio::io;
-
-    use crate::ConnectReturnCode;
-
-    use super::{DecodeError, EncodeError};
 
     #[derive(Debug)]
     pub struct ServerError {

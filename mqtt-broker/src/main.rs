@@ -353,7 +353,7 @@ async fn establish_session<S: AsyncWriteExt + AsyncReadExt + Unpin>(
 
                                 // authenticate the request
                                 /*
-                                 * TODO: the user is mut here becuase clippy isn't able to tell that the user can only be assigned once. 
+                                 * TODO: the user is mut here becuase clippy isn't able to tell that the user can only be assigned once.
                                  * Maybe change the control flow for the function to safegaurd against inadvertant assignments to the user variable?
                                  */
                                 let mut user: Option<UserMeta> = None;
@@ -422,28 +422,21 @@ async fn handle_session<S: AsyncRead + AsyncWrite + Unpin>(
 
     loop {
         // read in all packets.
-        while let Ok(packet_res) = read_packet::<_, ServerError>(stream).await {
-            match packet_res {
-                Some(packet) => {
-                    if session.timed_out() {
-                        // if session has timed out, exit the main event loop
-                        return Ok(());
-                    } else {
-                        // if session has NOT timed out, update the last_read value of the session and continue the main event loop.
-                        session.update_last_read();
-                    }
-
-                    let should_shutdown =
-                        handle_packet(server, &mut stream, session, &mut mailbox, packet).await?;
-
-                    if should_shutdown {
-                        return Ok(());
-                    };
-                }
-                None => {
-                    break;
-                }
+        while let Some(packet) = read_packet::<_, ServerError>(stream).await? {
+            if session.timed_out() {
+                // if session has timed out, exit the main event loop
+                return Ok(());
+            } else {
+                // if session has NOT timed out, update the last_read value of the session and continue the main event loop.
+                session.update_last_read();
             }
+
+            let should_shutdown =
+                handle_packet(server, &mut stream, session, &mut mailbox, packet).await?;
+
+            if should_shutdown {
+                return Ok(());
+            };
         }
 
         // WRITE all newly received packets
