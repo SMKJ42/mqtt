@@ -1,23 +1,27 @@
 use bytes::{BufMut, BytesMut};
+
 use mqtt_core::err::server::{self, ServerError};
 use mqtt_core::id::{IdGenType, IdGenerator};
+use mqtt_core::msg_assurance::{AtLeastOnceList, ExactlyOnceList, RetryDuration};
 use mqtt_core::qos::QosLevel;
 use mqtt_core::topic::TopicFilter;
+use mqtt_core::v3::{
+    ConnectPacket, MqttPacket, PubAckPacket, PubRecPacket, PubRelPacket, PublishPacket, Will,
+};
 use mqtt_core::ConnectReturnCode;
+
 use r2d2_sqlite::SqliteConnectionManager;
+
 use sheesh::harness::sqlite::user::SqliteHarnessUser;
 use sheesh::harness::stateless::{StatelessSession, StatelessToken};
 use sheesh::harness::DbHarness;
 use sheesh::id::DefaultIdGenerator;
 use sheesh::session::{SessionManager, SessionManagerConfig};
+
 use std::path::PathBuf;
 use std::{collections::HashMap, sync::Arc, time::Instant};
-use tokio::io::{AsyncWrite, AsyncWriteExt};
 
-use mqtt_core::msg_assurance::{AtLeastOnceList, ExactlyOnceList, RetryDuration};
-use mqtt_core::v3::{
-    ConnectPacket, MqttPacket, PubAckPacket, PubRecPacket, PubRelPacket, PublishPacket, Will,
-};
+use tokio::io::{AsyncWrite, AsyncWriteExt};
 
 pub type AtLeastOnceListType = AtLeastOnceList<Arc<PublishPacket>, Instant, RetryDuration>;
 pub type ExactlyOnceListType = ExactlyOnceList<Arc<PublishPacket>, Instant, RetryDuration>;
@@ -154,7 +158,7 @@ impl ActiveSession {
     }
 
     pub fn rel(&mut self, packet_id: u16) -> Option<Arc<PublishPacket>> {
-        self.qos2_packets.relay(packet_id)
+        self.qos2_packets.release(packet_id)
     }
 
     pub fn comp(&mut self, packet_id: u16) {
@@ -303,8 +307,8 @@ impl DisconnectedSessions {
 use sheesh::user::{UserManager, UserManagerConfig, UserMeta};
 
 pub struct AuthManager {
-    user: UserManager<DefaultIdGenerator, SqliteHarnessUser>,
-    session: SessionManager<DefaultIdGenerator, StatelessSession, StatelessToken>,
+    user_manager: UserManager<DefaultIdGenerator, SqliteHarnessUser>,
+    session_manager: SessionManager<DefaultIdGenerator, StatelessSession, StatelessToken>,
 }
 
 impl AuthManager {
@@ -315,14 +319,23 @@ impl AuthManager {
 
         harness.init_tables().unwrap();
 
-        let user = UserManagerConfig::default().init(harness.user);
-        let session = SessionManagerConfig::default().init(harness.session, harness.token);
+        let user_manager = UserManagerConfig::default().init(harness.user);
+        let session_manager = SessionManagerConfig::default().init(harness.session, harness.token);
 
-        return Self { user, session };
+        return Self {
+            user_manager,
+            session_manager,
+        };
     }
 
     pub fn verify_credentials(&self, username: &str, pwd: &str) -> Result<UserMeta, ServerError> {
-        match self.user.login(&self.session, username, pwd) {
+        // "user.login" may seem unintuitive, but the authmanager is utilizing StatelessSession, and therefore we do not need to hold on to a session token.
+        // We are only authenticating the username / password and holding the connection.
+        // If the client disconnects, they will have to provide their username and password in the connect packet.
+        match self
+            .user_manager
+            .login(&self.session_manager, username, pwd)
+        {
             Ok((user, _, _)) => return Ok(user),
             Err(_) => {
                 return Err(ServerError::new(

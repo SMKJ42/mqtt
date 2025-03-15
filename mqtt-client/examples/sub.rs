@@ -6,7 +6,7 @@ use std::{
 use mqtt_client::r#async::AsyncClient;
 use mqtt_core::{
     qos::QosLevel,
-    topic::TopicFilter,
+    topic::{TopicFilter, TopicSubscription},
     v3::{ConnectPacket, MqttPacket, PublishPacket, SubscribePacket},
 };
 use tokio::net::TcpStream;
@@ -22,7 +22,7 @@ async fn main() {
 
     let topics = args
         .iter()
-        .map(|x| (TopicFilter::from_str(&x).unwrap(), QosLevel::ExactlyOnce))
+        .map(|x| TopicSubscription::new(TopicFilter::from_str(&x).unwrap(), QosLevel::ExactlyOnce))
         .collect();
 
     let packet = SubscribePacket::new(client.next_packet_id().unwrap(), topics);

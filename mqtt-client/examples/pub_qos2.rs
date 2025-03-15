@@ -16,9 +16,9 @@ async fn main() {
 
     let will = Will::new(
         topic_name.clone(),
-        "RETAIN".to_string(),
+        "WILL MESSAGE".to_string(),
         mqtt_core::qos::QosLevel::ExactlyOnce,
-        true,
+        false,
     );
 
     let packet = ConnectPacket::new(false, 10, String::from("pub_id2"), Some(will), None, None);

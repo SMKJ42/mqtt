@@ -32,7 +32,7 @@ impl Mailbox {
         while let Some(idx) = self
             .mail_mut()
             .iter()
-            .position(|mail| &mail.topic == filter)
+            .position(|mail| mail.topic() == filter)
         {
             self.mail_mut().remove(idx);
         }
@@ -81,6 +81,10 @@ impl Mail {
 
     pub fn qos(&self) -> QosLevel {
         return self.qos_level;
+    }
+
+    pub fn topic(&self) -> &TopicName {
+        return &self.topic;
     }
 }
 

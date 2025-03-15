@@ -13,7 +13,7 @@ pub struct MqttEnv {
 }
 
 impl MqttEnv {
-    pub fn init_env(self) -> Self {
+    pub fn init(self) -> Self {
         if self.config.should_log_file() || self.config.should_log_console() {
             let _logger = BrokerLogger::new(&self.config)
                 .init(self.config.log_level())

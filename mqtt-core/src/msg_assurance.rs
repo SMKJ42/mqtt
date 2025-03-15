@@ -30,7 +30,6 @@ where
     /// The returned packet is safe to drop.
     pub fn origin(&mut self, packet: Arc<PublishPacket>, new_id: u16) -> PublishPacket {
         let mut deref_packet = (*packet).clone();
-
         let packet = ExactlyOncePacket::origin(packet, new_id);
         match self.inner.binary_search(&packet) {
             Ok(_idx) => {
@@ -69,7 +68,7 @@ where
     }
 
     /// Updates the state of the ExactlyOncelist to reflect that the PUBREL packet has been received.
-    pub fn relay(&mut self, packet_id: u16) -> Option<Arc<PublishPacket>> {
+    pub fn release(&mut self, packet_id: u16) -> Option<Arc<PublishPacket>> {
         for packet in self.inner.iter_mut() {
             if packet.new_id == packet_id {
                 return packet.relay();
@@ -520,13 +519,15 @@ pub struct RetryDuration {
     dur: core::time::Duration,
 }
 
-impl ExponentialBackoff for RetryDuration {
+impl Default for RetryDuration {
     fn default() -> Self {
         return Self {
             dur: Duration::from_millis(200),
         };
     }
+}
 
+impl ExponentialBackoff for RetryDuration {
     fn exponential(&self) -> core::time::Duration {
         return *self.dur.checked_mul(2).get_or_insert(Duration::MAX);
     }
@@ -565,12 +566,6 @@ pub trait Instant: Ord {
 /// }
 ///
 /// impl ExponentialBackoff for MyDuration {
-///     fn default() -> Self {
-///         return Self {
-///             dur: Duration::from_millis(1000),
-///         };
-///     }
-///
 ///     fn exponential(&self) -> core::time::Duration {
 ///         return *self.dur.checked_mul(2).get_or_insert(Duration::MAX);
 ///     }
@@ -584,12 +579,9 @@ pub trait Instant: Ord {
 ///     }
 /// }
 /// ```
-pub trait ExponentialBackoff: Ord {
+pub trait ExponentialBackoff: Ord + Default {
     /// Returns a new duration with the exponential backoff function applied.
-    ///
     /// Returns None if an overflow occured.
-    fn default() -> Self;
-
     fn exponential(&self) -> core::time::Duration;
 
     /// Function that receives the inner Duration value.

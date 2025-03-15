@@ -2,7 +2,7 @@ use crate::{
     err::{DecodeError, EncodeError},
     io::{encode_packet_length, encode_utf8},
     qos::QosLevel,
-    topic::TopicFilter,
+    topic::{TopicFilter, TopicFilterResult, TopicSubscription},
     v3::PacketType,
 };
 use bytes::{Buf, BufMut, Bytes, BytesMut};
@@ -34,22 +34,16 @@ pub struct SubscribePacket {
      *
      * This gives the maximum QoS level at which the Server can send Application Messages to the Client.
      */
-    payload: Vec<FilterResult>,
-}
-
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
-pub enum FilterResult {
-    Ok { filter: TopicFilter, qos: QosLevel },
-    Err,
+    payload: Vec<TopicFilterResult>,
 }
 
 impl SubscribePacket {
-    pub fn new(packet_id: u16, payload: Vec<(TopicFilter, QosLevel)>) -> Self {
+    pub fn new(packet_id: u16, payload: Vec<TopicSubscription>) -> Self {
         return Self {
             packet_id,
             payload: payload
                 .into_iter()
-                .map(|(filter, qos)| FilterResult::Ok { filter, qos })
+                .map(|sub| TopicFilterResult::Ok(sub))
                 .collect(),
         };
     }
@@ -57,20 +51,20 @@ impl SubscribePacket {
     pub fn decode(bytes: &mut Bytes) -> Result<Self, DecodeError> {
         let packet_id = bytes.get_u16();
 
-        let mut payload: Vec<FilterResult> = Vec::new();
+        let mut payload: Vec<TopicFilterResult> = Vec::new();
 
         // The requested maximum QoS field is encoded in the byte following each UTF-8 encoded topic name, and these Topic Filter / QoS pairs are packed contiguously.
         loop {
             match TopicFilter::decode(bytes) {
                 Ok(filter) => {
                     let qos: QosLevel = bytes.get_u8().try_into()?;
-                    payload.push(FilterResult::Ok { filter, qos });
+                    payload.push(TopicFilterResult::Ok(TopicSubscription::new(filter, qos)));
                     if bytes.remaining() == 0 {
                         break;
                     }
                 }
 
-                Err(_) => payload.push(FilterResult::Err),
+                Err(_) => payload.push(TopicFilterResult::Err),
             }
         }
 
@@ -83,11 +77,11 @@ impl SubscribePacket {
 
         for topic in &self.payload {
             match topic {
-                FilterResult::Ok { filter, .. } => {
+                TopicFilterResult::Ok(sub) => {
                     len += 2 + 1;
-                    len += filter.len();
+                    len += sub.filter().len();
                 }
-                FilterResult::Err => {
+                TopicFilterResult::Err => {
                     panic!("Cannot encode invalid TopicFilter.");
                 }
             }
@@ -105,11 +99,11 @@ impl SubscribePacket {
 
         for topic in &self.payload {
             match topic {
-                FilterResult::Ok { filter, qos } => {
-                    encode_utf8(&mut bytes, &filter.clone().to_string())?;
-                    bytes.put_u8(*qos as u8);
+                TopicFilterResult::Ok(sub) => {
+                    encode_utf8(&mut bytes, &sub.filter().clone().to_string())?;
+                    bytes.put_u8(sub.qos() as u8);
                 }
-                FilterResult::Err => {
+                TopicFilterResult::Err => {
                     panic!()
                 }
             }
@@ -122,7 +116,7 @@ impl SubscribePacket {
         return self.packet_id;
     }
 
-    pub fn topic_filters(&self) -> Vec<FilterResult> {
+    pub fn topic_filters(&self) -> Vec<TopicFilterResult> {
         return self.payload.clone();
     }
 }
@@ -132,7 +126,7 @@ mod packet {
     use super::SubscribePacket;
     use crate::{
         qos::QosLevel,
-        topic::TopicFilter,
+        topic::{TopicFilter, TopicSubscription},
         v3::{FixedHeader, MqttPacket},
     };
     use bytes::Buf;
@@ -141,7 +135,7 @@ mod packet {
     fn serialize_deserialize() {
         let packet = SubscribePacket::new(
             1234,
-            vec![(
+            vec![TopicSubscription::new(
                 TopicFilter::from_str("test").unwrap(),
                 QosLevel::AtLeastOnce,
             )],

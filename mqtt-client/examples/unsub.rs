@@ -6,7 +6,7 @@ use std::{
 use mqtt_client::r#async::AsyncClient;
 use mqtt_core::{
     qos::QosLevel,
-    topic::TopicFilter,
+    topic::{TopicFilter, TopicSubscription},
     v3::{ConnectPacket, MqttPacket, PublishPacket, SubscribePacket, UnsubscribePacket},
 };
 use tokio::{net::TcpStream, time::sleep};
@@ -20,9 +20,9 @@ async fn main() {
     let packet = ConnectPacket::new(false, 100, String::from("test_id"), None, None, None);
     client.connect(packet).await.unwrap();
 
-    let topics: Vec<(TopicFilter, QosLevel)> = args
+    let topics: Vec<TopicSubscription> = args
         .iter()
-        .map(|x| (TopicFilter::from_str(&x).unwrap(), QosLevel::ExactlyOnce))
+        .map(|x| TopicSubscription::new(TopicFilter::from_str(&x).unwrap(), QosLevel::ExactlyOnce))
         .collect();
 
     let packet = SubscribePacket::new(client.next_packet_id().unwrap(), topics.clone());
@@ -58,8 +58,10 @@ async fn main() {
     loop {
         if let Some(time) = start {
             if Instant::now().duration_since(time) > dur {
-                let packet =
-                    UnsubscribePacket::new(6821, topics.iter().map(|x| x.0.clone()).collect());
+                let packet = UnsubscribePacket::new(
+                    6821,
+                    topics.iter().map(|x| x.filter().clone()).collect(),
+                );
                 start = None;
                 client.unsub(packet).await.unwrap();
                 println!("Unsubscribing.")

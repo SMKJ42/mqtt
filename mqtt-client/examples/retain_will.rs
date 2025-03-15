@@ -11,8 +11,8 @@ async fn main() {
     let mut client = AsyncClient::new(stream);
 
     let will = Will::new(
-        TopicName::from_str("test").unwrap(),
-        "RETAIN".to_string(),
+        TopicName::from_str("retain_will").unwrap(),
+        "WILL & RETAIN MESSAGE".to_string(),
         mqtt_core::qos::QosLevel::AtMostOnce,
         true,
     );
@@ -20,6 +20,7 @@ async fn main() {
     let packet = ConnectPacket::new(false, 10, String::from("pub_id_1"), Some(will), None, None);
     client.connect(packet).await.unwrap();
 
-    // check other clients to see if the will is published / retained.
-    panic!();
+    println!("Press CTL+C to ensure the will is published");
+
+    loop {}
 }

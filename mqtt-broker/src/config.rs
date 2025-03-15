@@ -23,7 +23,7 @@ impl MqttConfig {
         return self.connection.ip.to_string() + ":" + &self.connection.port.to_string();
     }
 
-    pub fn is_tls_enabled(&self) -> bool {
+    pub fn tls_enabled(&self) -> bool {
         return self.connection.tls;
     }
 

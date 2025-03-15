@@ -14,11 +14,11 @@ use init::MqttEnv;
 
 use mqtt_core::{
     err::server::{self, ServerError},
-    io::read_packet,
+    io::read_packet_with_timeout,
     qos::{QosLevel, SubAckQoS},
-    topic::{TopicFilter, TopicName},
+    topic::{TopicFilterResult, TopicName},
     v3::{
-        ConnAckPacket, FilterResult, MqttPacket, PingRespPacket, PubAckPacket, PubCompPacket,
+        ConnAckPacket, ConnectPacket, MqttPacket, PingRespPacket, PubAckPacket, PubCompPacket,
         PublishPacket, SubAckPacket, UnsubAckPacket,
     },
     ConnectReturnCode,
@@ -35,9 +35,9 @@ use tokio::{
 use rustls::pki_types::{pem::PemObject, CertificateDer, PrivateKeyDer};
 use tokio_rustls::TlsAcceptor;
 
-use mailbox::{Mail, Mailbox};
+use mailbox::Mailbox;
 use session::{ActiveSession, AuthManager, DisconnectedSessions};
-use topic::ServerTopics;
+use topic::{subscribe_to_topic_filter, ServerTopics};
 
 struct MqttServer {
     config: MqttConfig,
@@ -68,7 +68,7 @@ impl MqttServer {
 
         log::info!("Server listening at: {}", addr);
 
-        if self.config.is_tls_enabled() {
+        if self.config.tls_enabled() {
             self.start_tls(listener).await;
         } else {
             self.start_plaintext(listener).await;
@@ -85,10 +85,8 @@ impl MqttServer {
 
                     let server_clone = Arc::clone(&server);
 
-                    // let mut stream = BufReader::new(stream);
-
                     tokio::spawn(async move {
-                        if let Err(err) = handle_client(server_clone, &mut stream).await {
+                        if let Err(err) = handle_client(&server_clone, &mut stream).await {
                             log::warn!("Error handling client: {err}, Closing connection: {addr}")
                         } else {
                             log::info!("Gracefully closing connection: {addr}")
@@ -142,7 +140,7 @@ impl MqttServer {
                     let mut tls_stream = BufReader::new(tls_stream);
 
                     tokio::spawn(async move {
-                        if let Err(err) = handle_client(server_clone, &mut tls_stream).await {
+                        if let Err(err) = handle_client(&server_clone, &mut tls_stream).await {
                             log::error!("Error handling client: {err}");
                             log::warn!("Closing connection: {addr}")
                         } else {
@@ -178,6 +176,11 @@ impl MqttServer {
             Some(topic) => {
                 // only fails when there are no receivers to be written to.
                 // This is inteded behavior, so ignore the error and do not propogate.
+
+                // TODO: We can use topic.channel().receivers() to find if there are no subs.
+                // if there are none, we can persist to a db... this is similar to google's Pub/Sub service, but
+                // it would also be cool to store all messages in a db and have them be queryable...
+
                 let _ = topic.channel().send(packet);
             }
             None => {
@@ -186,43 +189,8 @@ impl MqttServer {
         }
     }
 
-    /// Subscribe to a topic.
-    ///
-    /// This function forwards any retained messages that the server holds for that topic,
-    /// and returns a mailbox with receivers to the subscriptions.
-    ///
-    /// ## Error
-    ///
-    /// It will error if the retained messages cannot be written to the stream
-    async fn subscribe_to_filter<T: AsyncWrite + Unpin>(
-        &self,
-        stream: &mut T,
-        session: &mut ActiveSession,
-        mailbox: &mut Mailbox,
-        topic_filter: &TopicFilter,
-        qos: QosLevel,
-    ) -> Result<(), ServerError> {
-        let topics = self.topics.read().await;
-        for (topic_name, topic) in topics.iter() {
-            if topic_name == topic_filter {
-                // We can upgrade the Client's QoS for the requested messages on subscribe, see MQTT V3.1.1 documentation.
-                //
-                // The QoS of Payload Messages sent in response to a Subscription MUST be the minimum of the QoS of the originally
-                // published message and the maximum QoS granted by the Server. The server is permitted to send duplicate copies of
-                // a message to a subscriber in the case where the original message was published with QoS 1 and the maximum QoS
-                // granted was QoS 0 [MQTT-3.8.4-6].
-                if let Some(retained_message) = topic.get_retained_message() {
-                    // Performance overhead (clone into an Arc). The message assurance might need some refractoring...
-                    let packet = session.origin(&Arc::new(retained_message.clone()));
-                    stream.write_all(&packet.encode()?).await?;
-                }
-
-                let receiver = topic.subscribe();
-                let mail = Mail::new(topic_name.clone(), receiver, qos);
-                mailbox.queue(mail);
-            }
-        }
-        return Ok(());
+    fn topics(&self) -> &Arc<RwLock<ServerTopics>> {
+        return &self.topics;
     }
 
     async fn publish_will(&self, session: &mut ActiveSession) -> Result<(), ServerError> {
@@ -284,10 +252,10 @@ impl MqttServer {
 
 /// Handle a single TCP client connection event loop.
 async fn handle_client<S: AsyncReadExt + AsyncWrite + Unpin>(
-    server: Arc<MqttServer>,
+    server: &Arc<MqttServer>,
     stream: &mut S,
 ) -> Result<(), ServerError> {
-    let active_session = establish_session(&server, stream).await?;
+    let active_session = handle_first_packet(&server, stream).await?;
 
     log::info!("connected");
 
@@ -314,6 +282,60 @@ async fn handle_client<S: AsyncReadExt + AsyncWrite + Unpin>(
     }
 }
 
+async fn handle_connect_packet<S: AsyncWriteExt + AsyncReadExt + Unpin>(
+    server: &Arc<MqttServer>,
+    packet: ConnectPacket,
+    stream: &mut S,
+) -> Result<ActiveSession, ServerError> {
+    let mut connack = ConnAckPacket::new(false, ConnectReturnCode::Accept);
+
+    // authenticate the request
+    /*
+     * TODO: the user is mut here becuase clippy isn't able to tell that the user can only be assigned once.
+     * Maybe change the control flow for the function to safegaurd against inadvertant assignments to the user variable?
+     */
+    let mut user: Option<UserMeta> = None;
+
+    if server.config.require_auth() {
+        match (packet.username(), packet.password()) {
+            (Some(username), Some(password)) => {
+                let password = str::from_utf8(&password).unwrap();
+                user = Some(server.auth_manager.verify_credentials(username, password)?);
+            }
+            _ => {
+                return Err(ServerError::new(
+                    server::ErrorKind::ConnectError(ConnectReturnCode::BadUsernameOrPassword),
+                    String::from(
+                        "Client attempted to connect without provided a username or password",
+                    ),
+                ))
+            }
+        }
+    }
+
+    let session: ActiveSession;
+
+    let mut sessions = server.dc_sessions.lock().await;
+    // Check if the server has a session history.
+    if let Some(dc_session) = sessions.remove_session(packet.client_id()) {
+        if packet.clean_session() {
+            // The client requested a new session, drop the old session history and continue.
+            session = ActiveSession::new(packet, user);
+        } else {
+            // The client requested to resume from a client's prior history.
+            connack.set_session_present(true);
+            session = dc_session.into_active(packet)?;
+        }
+    } else {
+        // The server does not have any session history.
+        session = ActiveSession::new(packet, user);
+    }
+
+    stream.write_all(&connack.encode()).await?;
+
+    return Ok(session);
+}
+
 /// Reads the initial packet sent from the client
 ///
 /// The first packet from the client should be a CONNECT packet or a PINGREQ packet,
@@ -328,65 +350,25 @@ async fn handle_client<S: AsyncReadExt + AsyncWrite + Unpin>(
 ///
 /// This function is NOT part of the main event loop of the client's connection instance.
 ///
-
-async fn establish_session<S: AsyncWriteExt + AsyncReadExt + Unpin>(
+async fn handle_first_packet<S: AsyncWriteExt + AsyncReadExt + Unpin>(
     server: &Arc<MqttServer>,
     stream: &mut S,
 ) -> Result<Option<ActiveSession>, ServerError> {
     loop {
-        match read_packet::<_, ServerError>(stream).await {
+        match read_packet_with_timeout::<_, ServerError>(stream).await {
             Ok(packet_opt) => {
-                match packet_opt {
-                    Some(packet) => {
-                        let session: ActiveSession;
-                        match packet {
+                if let Some(packet) = packet_opt {
+                    match packet {
                             MqttPacket::PingReq(_) => {
                                 stream
                                     .write_all(&mut PingRespPacket::new().encode())
                                     .await?;
-
                                 return Ok(None);
                             }
 
                             MqttPacket::Connect(packet) => {
-                                let mut connack = ConnAckPacket::new(false, ConnectReturnCode::Accept);
-
-                                // authenticate the request
-                                /*
-                                 * TODO: the user is mut here becuase clippy isn't able to tell that the user can only be assigned once.
-                                 * Maybe change the control flow for the function to safegaurd against inadvertant assignments to the user variable?
-                                 */
-                                let mut user: Option<UserMeta> = None;
-
-                                if server.config.require_auth() {
-                                    match (packet.username(), packet.password()) {
-                                        (Some(username), Some(password)) => {
-                                            let password = str::from_utf8(&password).unwrap();
-                                            user = Some(server.auth_manager.verify_credentials(username, password)?);
-                                        }
-                                        _ => {
-                                            return Err(ServerError::new(server::ErrorKind::ConnectError(ConnectReturnCode::BadUsernameOrPassword), String::from("Client attempted to connect without provided a username or password")))
-                                        }
-                                    }
-                                }
-
-                                let mut sessions = server.dc_sessions.lock().await;
-                                // Check if the server has a session history.
-                                if let Some(dc_session) = sessions.remove_session(packet.client_id()) {
-                                    if packet.clean_session() {
-                                        // The client requested a new session, drop the old session history and continue.
-                                        session = ActiveSession::new(packet, user);
-                                    } else {
-                                        // The client requested to resume from a client's prior history.
-                                        connack.set_session_present(true);
-                                        session = dc_session.into_active(packet)?;
-                                    }
-                                } else {
-                                    // The server does not have any session history.
-                                    session = ActiveSession::new(packet, user);
-                                }
-
-                                stream.write_all(&connack.encode()).await?;
+                                // return Ok(Some( handle_connect().await));
+                                return handle_connect_packet(server, packet, stream).await.map(|x| Some(x));
                             }
                             _ => {
                                 return Err(ServerError::new(
@@ -397,12 +379,6 @@ async fn establish_session<S: AsyncWriteExt + AsyncReadExt + Unpin>(
                                 ))
                             }
                         };
-
-                        return Ok(Some(session));
-                    }
-
-                    // requeue the task.
-                    None => continue,
                 }
             }
             Err(err) => {
@@ -422,7 +398,7 @@ async fn handle_session<S: AsyncRead + AsyncWrite + Unpin>(
 
     loop {
         // read in all packets.
-        while let Some(packet) = read_packet::<_, ServerError>(stream).await? {
+        while let Some(packet) = read_packet_with_timeout::<_, ServerError>(stream).await? {
             if session.timed_out() {
                 // if session has timed out, exit the main event loop
                 return Ok(());
@@ -489,7 +465,7 @@ async fn handle_session<S: AsyncRead + AsyncWrite + Unpin>(
         }
 
         session.clean_session();
-        // RETRY all already sent packets
+        // RETRY already sent packets that have not received a response after the timeout period.
         session.retry_packets(stream).await?;
     }
 }
@@ -515,13 +491,17 @@ async fn handle_packet<S: AsyncRead + AsyncWrite + Unpin>(
 
             for topic in packet.topic_filters() {
                 match topic {
-                    FilterResult::Ok { filter, qos } => {
-                        server
-                            .subscribe_to_filter(stream, session, mailbox, &filter, qos)
-                            .await?;
-                        resp.push(qos.into());
+                    TopicFilterResult::Ok(sub) => {
+                        let topics = server.topics().read().await;
+                        if subscribe_to_topic_filter(stream, topics.iter(), session, mailbox, &sub)
+                            .await?
+                        {
+                            resp.push(sub.qos().into());
+                        } else {
+                            resp.push(SubAckQoS::Err)
+                        }
                     }
-                    FilterResult::Err => {
+                    TopicFilterResult::Err => {
                         resp.push(SubAckQoS::Err);
                     }
                 }
@@ -626,11 +606,10 @@ async fn handle_packet<S: AsyncRead + AsyncWrite + Unpin>(
 }
 
 #[tokio::main]
-async fn main() -> tokio::io::Result<()> {
+async fn main() {
     let config_path = PathBuf::from("config.toml");
-    let env = MqttEnv::new(&config_path).init_env();
+    let env = MqttEnv::new(&config_path).init();
+
     let server = MqttServer::new(env.config());
     server.start().await;
-
-    return Ok(());
 }

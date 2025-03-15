@@ -3,7 +3,34 @@ use bytes::Bytes;
 use crate::{
     err::{DecodeError, DecodeErrorKind},
     io::decode_utf8,
+    qos::QosLevel,
 };
+
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
+pub enum TopicFilterResult {
+    Ok(TopicSubscription),
+    Err,
+}
+
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
+pub struct TopicSubscription {
+    filter: TopicFilter,
+    qos: QosLevel,
+}
+
+impl TopicSubscription {
+    pub fn new(filter: TopicFilter, qos: QosLevel) -> Self {
+        return Self { filter, qos };
+    }
+
+    pub fn filter(&self) -> &TopicFilter {
+        return &self.filter;
+    }
+
+    pub fn qos(&self) -> QosLevel {
+        return self.qos;
+    }
+}
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct TopicFilter(Vec<TopicToken>);

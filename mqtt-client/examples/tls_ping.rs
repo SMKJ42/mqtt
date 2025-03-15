@@ -14,7 +14,6 @@ const MAXPING: u32 = 10000;
 #[tokio::main]
 async fn main() {
     let stream = TcpStream::connect("127.0.0.1:8883").await.unwrap();
-    // let stream = BufReader::new(stream);
 
     let domain = "test.mqtt.com";
 
@@ -25,7 +24,8 @@ async fn main() {
 
     let config = rustls::ClientConfig::builder()
         .with_root_certificates(root_cert_store)
-        .with_no_client_auth(); // i guess this was previously the default?
+        .with_no_client_auth();
+
     let connector = TlsConnector::from(Arc::new(config));
     let domain = ServerName::try_from(domain).unwrap().to_owned();
 

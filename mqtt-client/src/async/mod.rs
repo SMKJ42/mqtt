@@ -2,7 +2,7 @@ use futures::executor::block_on;
 use mqtt_core::{
     err::client::{self, ClientError},
     id::{IdGenType, IdGenerator},
-    io::read_packet,
+    io::read_packet_with_timeout,
     v3::{
         ConnectPacket, DisconnectPacket, MqttPacket, PingReqPacket, PubAckPacket, PubCompPacket,
         PubRecPacket, PubRelPacket, PublishPacket, SubscribePacket, UnsubscribePacket,
@@ -13,7 +13,7 @@ use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
 
 pub struct AsyncClient<T>
 where
-    T: AsyncRead + AsyncWriteExt + Unpin,
+    T: AsyncRead + AsyncWrite + Unpin,
 {
     stream: BufReader<T>,
     id_gen: IdGenerator,
@@ -38,7 +38,7 @@ where
         self.stream.write_all(&mut packet.encode().unwrap()).await?;
         self.stream.flush().await?;
         loop {
-            if let Some(packet) = read_packet::<_, ClientError>(&mut self.stream)
+            if let Some(packet) = read_packet_with_timeout::<_, ClientError>(&mut self.stream)
                 .await
                 .unwrap()
             {
@@ -59,7 +59,7 @@ where
     }
 
     pub async fn recv_packet(&mut self) -> Result<Option<MqttPacket>, ClientError> {
-        return read_packet(&mut self.stream).await;
+        return read_packet_with_timeout(&mut self.stream).await;
     }
 
     pub async fn ping(&mut self) -> Result<(), ClientError> {
@@ -124,3 +124,5 @@ impl<T: AsyncRead + AsyncWrite + Unpin> Drop for AsyncClient<T> {
         block_on(self.disconnect()).unwrap();
     }
 }
+
+fn packet_response(packet: MqttPacket) {}

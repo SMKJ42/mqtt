@@ -1,6 +1,6 @@
 use bytes::Bytes;
 
-mod conack;
+mod connack;
 mod connect;
 mod disconnect;
 mod pingreq;
@@ -15,7 +15,7 @@ mod subscribe;
 mod unsuback;
 mod unsubscribe;
 
-pub use conack::ConnAckPacket;
+pub use connack::ConnAckPacket;
 pub use connect::{ConnectPacket, Will};
 pub use disconnect::DisconnectPacket;
 pub use pingreq::PingReqPacket;
@@ -27,7 +27,7 @@ pub use pubrec::PubRecPacket;
 pub use pubrel::PubRelPacket;
 pub use std::fmt::{Debug, Display};
 pub use suback::SubAckPacket;
-pub use subscribe::{FilterResult, SubscribePacket};
+pub use subscribe::SubscribePacket;
 pub use unsuback::UnsubAckPacket;
 pub use unsubscribe::UnsubscribePacket;
 

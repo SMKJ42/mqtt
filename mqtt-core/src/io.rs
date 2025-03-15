@@ -228,7 +228,7 @@ use crate::{
     v3::{decode_packet, FixedHeader, MqttPacket},
 };
 
-pub async fn read_packet<
+pub async fn read_packet_with_timeout<
     S: AsyncReadExt + AsyncRead + AsyncWriteExt + Unpin,
     E: From<io::Error> + From<err::DecodeError>,
 >(
@@ -241,18 +241,18 @@ pub async fn read_packet<
         _ = sleep(Duration::from_micros(100)).fuse() => {
             return Ok(None);
         }
-        out = unfused_read_packet(stream).fuse() => {
-            return out;
+        out = read_packet(stream).fuse() => {
+            return out.map(|packet| Some(packet));
         }
     }
 }
 
-pub async fn unfused_read_packet<
+pub async fn read_packet<
     S: AsyncReadExt + AsyncWrite + Unpin,
     E: From<io::Error> + From<err::DecodeError>,
 >(
     stream: &mut S,
-) -> Result<Option<MqttPacket>, E> {
+) -> Result<MqttPacket, E> {
     // read in the packet type and the encoded length.
     let mut header_buf = [0; 5];
     let f_header: FixedHeader;
@@ -283,7 +283,7 @@ pub async fn unfused_read_packet<
 
     match decode_packet(f_header, &mut buf.into()) {
         Ok(packet) => {
-            return Ok(Some(packet));
+            return Ok(packet);
         }
         Err(err) => {
             return Err(err.into());
