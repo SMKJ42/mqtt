@@ -1,17 +1,20 @@
+If you're crazy enough to want to help out, just submit a pull request. Here are some high level things that need work. Others are contained in the subdirectories.
+
 ### The road to MQTT world domination.
 
     - [X] MQTT v3.1.1 packet parsing library.
     - [X] MQTT v3.1.1 basic broker implementation.
-    - [X] Non-embedable Client library.
-    - [] Embeddable Client library.
-    - [] Full MQTT v3.1.1 compliance.
+    - [X] Full MQTT v3.1.1 compliance.
     - [] Optimize MQTT v3.1.1 implementation.
     - [] MQTT v5 packet parsing library.
     - [] MQTT v5 broker implementation.
     - [] Full MQTT v5 compliance.
     - [] Optimize MQTT v5 implementation.
-    - [] Client Authentication.
+    - [X] Non-embedable Client library.
+    - [] Embeddable Client library.
+    - [] Sync Client library.
+    - [X] Client Authentication.
     - [] Broker bridging.
-    - [] TLS connections.
-    - [] Server configuration file.
-    - [] Language interop for SUB oriented Clients (needs more research -- mmap?).
+    - [X] TLS connections.
+    - [] mTLS connections.
+    - [X] Server configuration file.
