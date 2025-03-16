@@ -8,6 +8,7 @@ use std::{
 };
 
 use log::LevelFilter;
+use mqtt_core::qos::QosLevel;
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Serialize, Default)]
@@ -50,6 +51,10 @@ impl MqttConfig {
 
     pub fn max_queued_messages(&self) -> usize {
         return self.broker.max_queued_messages;
+    }
+
+    pub fn default_qos(&self) -> QosLevel {
+        return self.broker.default_qos;
     }
 
     pub fn log_level(&self) -> LevelFilter {
@@ -153,12 +158,14 @@ impl Default for Logger {
 #[derive(Deserialize, Serialize)]
 pub struct Broker {
     max_queued_messages: usize,
+    default_qos: QosLevel,
 }
 
 impl Default for Broker {
     fn default() -> Self {
         return Self {
             max_queued_messages: 128,
+            default_qos: QosLevel::ExactlyOnce,
         };
     }
 }

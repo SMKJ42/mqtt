@@ -55,7 +55,10 @@ impl MqttServer {
     pub fn new(config: MqttConfig) -> Self {
         MqttServer {
             auth_manager: AuthManager::new(config.user_db()),
-            topics: Arc::new(RwLock::new(ServerTopics::new(config.max_queued_messages()))),
+            topics: Arc::new(RwLock::new(ServerTopics::new(
+                config.max_queued_messages(),
+                config.default_qos(),
+            ))),
             config: config,
             dc_sessions: Arc::new(Mutex::new(DisconnectedSessions::new())),
         }
@@ -171,7 +174,6 @@ impl MqttServer {
     /// If we encounter an error, it is intended that we ignore the error.
     async fn publish_to_topic(&self, topic: &TopicName, packet: Arc<PublishPacket>) {
         let mut topics = self.topics.write().await;
-
         match topics.topic_mut(topic) {
             Some(topic) => {
                 // only fails when there are no receivers to be written to.
@@ -261,6 +263,7 @@ async fn handle_client<S: AsyncReadExt + AsyncWrite + Unpin>(
 
     if let Some(mut session) = active_session {
         match handle_session(&server, stream, &mut session).await {
+            // If the session handler returns Ok, the client disconnected gracefully.
             Ok(()) => {
                 return Ok(());
             }
@@ -277,7 +280,7 @@ async fn handle_client<S: AsyncReadExt + AsyncWrite + Unpin>(
             }
         }
     } else {
-        // we received a PINGREQ so close the connection.
+        // we did not receive a connect packet, close the connection.
         return Ok(());
     }
 }
@@ -289,33 +292,17 @@ async fn handle_connect_packet<S: AsyncWriteExt + AsyncReadExt + Unpin>(
 ) -> Result<ActiveSession, ServerError> {
     let mut connack = ConnAckPacket::new(false, ConnectReturnCode::Accept);
 
-    // authenticate the request
-    /*
-     * TODO: the user is mut here becuase clippy isn't able to tell that the user can only be assigned once.
-     * Maybe change the control flow for the function to safegaurd against inadvertant assignments to the user variable?
-     */
-    let mut user: Option<UserMeta> = None;
-
-    if server.config.require_auth() {
-        match (packet.username(), packet.password()) {
-            (Some(username), Some(password)) => {
-                let password = str::from_utf8(&password).unwrap();
-                user = Some(server.auth_manager.verify_credentials(username, password)?);
-            }
-            _ => {
-                return Err(ServerError::new(
-                    server::ErrorKind::ConnectError(ConnectReturnCode::BadUsernameOrPassword),
-                    String::from(
-                        "Client attempted to connect without provided a username or password",
-                    ),
-                ))
-            }
-        }
-    }
-
     let session: ActiveSession;
 
-    let mut sessions = server.dc_sessions.lock().await;
+    // A little awkward of a join, but hey... it works... right?
+    let sessions_fut = server.dc_sessions.lock();
+    let (mut sessions, user) = if server.config.require_auth() {
+        let handle = join!(sessions_fut, authenticate_user(server, &packet));
+        (handle.0, Some(handle.1?))
+    } else {
+        (sessions_fut.await, None)
+    };
+
     // Check if the server has a session history.
     if let Some(dc_session) = sessions.remove_session(packet.client_id()) {
         if packet.clean_session() {
@@ -334,6 +321,24 @@ async fn handle_connect_packet<S: AsyncWriteExt + AsyncReadExt + Unpin>(
     stream.write_all(&connack.encode()).await?;
 
     return Ok(session);
+}
+
+async fn authenticate_user(
+    server: &Arc<MqttServer>,
+    packet: &ConnectPacket,
+) -> Result<UserMeta, ServerError> {
+    match (packet.username(), packet.password()) {
+        (Some(username), Some(password)) => {
+            let password = str::from_utf8(&password).unwrap();
+            return server.auth_manager.verify_credentials(username, password);
+        }
+        _ => {
+            return Err(ServerError::new(
+                server::ErrorKind::ConnectError(ConnectReturnCode::BadUsernameOrPassword),
+                String::from("Client attempted to connect without provided a username or password"),
+            ))
+        }
+    }
 }
 
 /// Reads the initial packet sent from the client

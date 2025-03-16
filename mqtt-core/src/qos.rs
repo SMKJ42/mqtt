@@ -102,7 +102,7 @@ impl<'de> Visitor<'de> for QosLevelVisitor {
     where
         E: serde::de::Error,
     {
-        return QosLevel::try_from(value).map_err(|e| {
+        return QosLevel::try_from(value).map_err(|_| {
             E::invalid_value(
                 serde::de::Unexpected::Unsigned(value as u64),
                 &format!("values 0, 1 or 2").as_str(),

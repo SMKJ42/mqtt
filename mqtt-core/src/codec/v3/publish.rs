@@ -4,11 +4,10 @@ use crate::{
     qos::QosLevel,
     topic::TopicName,
     v3::{FixedHeader, PacketType},
-    Decode, Encode,
+    Encode,
 };
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use core::fmt::Debug;
-use std::sync::Arc;
 
 /*
  * A PUBLISH Control Packet is sent from a Client to a Server

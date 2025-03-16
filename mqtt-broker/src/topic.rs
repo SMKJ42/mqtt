@@ -1,5 +1,6 @@
 use mqtt_core::{
     err::server::ServerError,
+    qos::QosLevel,
     topic::{TopicName, TopicSubscription},
     v3::PublishPacket,
     Encode,
@@ -21,6 +22,7 @@ use crate::{
 #[derive(Debug)]
 pub struct ServerTopics {
     topics: HashMap<TopicName, ServerTopic>,
+    max_qos: QosLevel,
     max_queued_messages: usize,
 }
 
@@ -28,17 +30,20 @@ impl ServerTopics {
     /// max_queued_messages: maximum number of messages to be stored in a queue for a given topic.
     /// If the broker-client connection does not reach the message before the queue size is reached,
     /// the message is lost.
-    pub fn new(max_queued_messages: usize) -> Self {
+    pub fn new(max_queued_messages: usize, max_qos: QosLevel) -> Self {
         return Self {
             topics: HashMap::new(),
             max_queued_messages,
+            max_qos,
         };
     }
 
     /// Creates a new topic from a given TopicName. String representation of topics is folder-like, i.e. "some/descriptor/for/topic"
     pub fn create_topic(&mut self, topic_name: TopicName) {
-        self.topics
-            .insert(topic_name, ServerTopic::new(self.max_queued_messages));
+        self.topics.insert(
+            topic_name,
+            ServerTopic::new(self.max_queued_messages, self.max_qos),
+        );
     }
 
     /// Reserves a new retained message for the topic contained in the packet.
@@ -54,9 +59,10 @@ impl ServerTopics {
                 channel.retain_message(packet);
             }
             None => {
-                let mut topic = ServerTopic::new(self.max_queued_messages);
-                topic.retain_message(packet);
-                self.topics.insert(topic_name, topic);
+                unreachable!("You've encountered a bug. Please submit a issue.");
+                // let mut topic = ServerTopic::new(self.max_queued_messages, max_qos);
+                // topic.retain_message(packet);
+                // self.topics.insert(topic_name, topic);
             }
         }
     }
@@ -75,14 +81,15 @@ impl ServerTopics {
 pub struct ServerTopic {
     channel: broadcast::Sender<Arc<PublishPacket>>,
     retained_message: Option<PublishPacket>,
-    // TODO: max_qos: QosLevel,
+    max_qos: QosLevel,
 }
 
 impl ServerTopic {
-    pub fn new(size: usize) -> Self {
+    pub fn new(size: usize, max_qos: QosLevel) -> Self {
         return Self {
             channel: broadcast::Sender::new(size),
             retained_message: None,
+            max_qos,
         };
     }
 
@@ -104,6 +111,10 @@ impl ServerTopic {
 
     pub fn subscribe(&self) -> tokio::sync::broadcast::Receiver<Arc<PublishPacket>> {
         return self.channel.subscribe();
+    }
+
+    pub fn max_qos(&self) -> QosLevel {
+        return self.max_qos;
     }
 }
 
@@ -152,7 +163,11 @@ pub async fn subscribe_to_topic_filter<S: AsyncWrite + Unpin>(
             }
 
             let receiver = topic.subscribe();
-            let mail = Mail::new(topic_name.clone(), receiver, topic_sub.qos());
+            let mail = Mail::new(
+                topic_name.clone(),
+                receiver,
+                topic_sub.qos().min(topic.max_qos()),
+            );
             mailbox.add_slot(mail);
         }
     }

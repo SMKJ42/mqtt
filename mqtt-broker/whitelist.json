@@ -1,5 +1,8 @@
 {
     "roles": {
+        "*": {
+            "subscribe": ["<username>/inbox"]
+        },
         "broker": {
             "publish": ["#"],
             "subscribe": ["#"]

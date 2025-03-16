@@ -2,10 +2,13 @@
 
 ## Broker Bridging todos
 
-[] Create internal topic namespace
-[] create broker namespace
-[] share messages namespace
-[] whitelist namespace
+-   Broker only namespace
+    [] Broker status namespace - health check
+    [] share messages namespace (batch messages? less io)
+    [] move topic to new broker namespace
+
+-   General broker namespace
+    [] Create internal topic namespace - lookups & connect info & include whitelist
 
 ## Authorization todos
 
