@@ -1,0 +1,16 @@
+{
+    "roles": {
+        "broker": {
+            "publish": ["#"],
+            "subscribe": ["#"]
+        },
+        "sensor": {
+            "publish": ["sensor/+/<username>/data"]
+        },
+        "controller": {
+            "subscribe": ["sensor/+/+/data", "controller/+/<username>/command"],
+            "publish": ["controller/+/<username>/status"]
+        },
+        "console": { "subscribe": ["#"], "publish": ["controller/+/+/command"] }
+    }
+}

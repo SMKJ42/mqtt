@@ -40,7 +40,10 @@ impl DisconnectPacket {
 #[cfg(test)]
 mod packet {
     use super::DisconnectPacket;
-    use crate::v3::{FixedHeader, MqttPacket};
+    use crate::{
+        v3::{FixedHeader, MqttPacket},
+        Decode,
+    };
     use bytes::Buf;
 
     #[test]

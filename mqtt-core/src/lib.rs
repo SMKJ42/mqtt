@@ -2,13 +2,14 @@ use core::fmt::Display;
 
 use err::{DecodeError, DecodeErrorKind};
 
+mod codec;
 pub mod err;
 pub mod id;
 pub mod io;
 pub mod msg_assurance;
 pub mod qos;
 pub mod topic;
-pub mod v3;
+pub use codec::*;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]

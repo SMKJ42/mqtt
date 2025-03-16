@@ -16,7 +16,7 @@ The primary goal of this repository is to provide a robust MQTT Broker / Client 
 
 -   MQTT v5
 -   MQTT-SN (v1.2)
--   Broker initiated QoS level downgrading.
+-   Broker initiated QoS level downgrading. (Packet downgrading from client pub & sub is supported)
 -   On disk Disconnected sessions.
 -   Client authentication.
 -   Client authoriziation.

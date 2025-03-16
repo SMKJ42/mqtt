@@ -2,6 +2,7 @@ use mqtt_core::{
     err::server::ServerError,
     topic::{TopicName, TopicSubscription},
     v3::PublishPacket,
+    Encode,
 };
 use std::{
     collections::{hash_map, HashMap},
@@ -74,6 +75,7 @@ impl ServerTopics {
 pub struct ServerTopic {
     channel: broadcast::Sender<Arc<PublishPacket>>,
     retained_message: Option<PublishPacket>,
+    // TODO: max_qos: QosLevel,
 }
 
 impl ServerTopic {
@@ -108,14 +110,23 @@ impl ServerTopic {
 /// Subscribe to a topic.
 ///
 /// This function forwards any retained messages that the server holds for that topic,
-/// and returns a mailbox with receivers to the subscriptions.
+///
+/// ## Returns
+///
+/// True if the client was successfully subscribed, false otherwise.
+/// 'success' is defined as the there is an associated topic for the filter,
+/// AND the client has the proper priviledges to access a topic inside the filter.
+///
+/// Because a client will be returned a success if even one topic matches a wildcard filter,
+/// care should be taken to ensure that whitelists are not configured to
+/// returned success on such patterns.
 ///
 /// ## Error
 ///
-/// It will error if the retained messages cannot be written to the stream, if there is no topic in the MQTT broker with that topic name, or
-/// if the client does not have priviledges to the server topic.
+/// It will error if the retained messages cannot be written to the stream,
 
 // TODO: authorization for topics.
+// TODO: binary search for left most valid, then recurse through remaining slice with another binary search.
 pub async fn subscribe_to_topic_filter<S: AsyncWrite + Unpin>(
     stream: &mut S,
     topics: hash_map::Iter<'_, TopicName, ServerTopic>,
@@ -142,7 +153,7 @@ pub async fn subscribe_to_topic_filter<S: AsyncWrite + Unpin>(
 
             let receiver = topic.subscribe();
             let mail = Mail::new(topic_name.clone(), receiver, topic_sub.qos());
-            mailbox.queue(mail);
+            mailbox.add_slot(mail);
         }
     }
     return Ok(sub_allowed);

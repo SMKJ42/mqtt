@@ -4,9 +4,11 @@ use crate::{
     qos::QosLevel,
     topic::TopicName,
     v3::{FixedHeader, PacketType},
+    Decode, Encode,
 };
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use core::fmt::Debug;
+use std::sync::Arc;
 
 /*
  * A PUBLISH Control Packet is sent from a Client to a Server
@@ -67,24 +69,6 @@ impl PublishPacket {
         };
     }
 
-    pub fn set_qos_atmostonce(&mut self) {
-        self.flags.set_qos(QosLevel::AtMostOnce);
-    }
-
-    pub fn set_qos_atleastonce(&mut self, packet_id: u16) {
-        self.flags.set_qos(QosLevel::AtLeastOnce);
-        self.packet_id = Some(packet_id);
-    }
-
-    pub fn set_qos_exactlyonce(&mut self, packet_id: u16) {
-        self.flags.set_qos(QosLevel::ExactlyOnce);
-        self.packet_id = Some(packet_id);
-    }
-
-    pub fn topic(&self) -> &TopicName {
-        return &self.topic_name;
-    }
-
     pub fn decode(f_header: FixedHeader, bytes: &mut Bytes) -> Result<Self, DecodeError> {
         let topic_name_in = decode_utf8(bytes)?;
         let topic_name = TopicName::from_str(topic_name_in.as_str())?;
@@ -105,32 +89,22 @@ impl PublishPacket {
         });
     }
 
-    pub fn encode(&self) -> Result<Bytes, EncodeError> {
-        // add size for topic length.
-        let mut len = 2 + self.topic_name.len();
-        // add 2 for packet id
+    pub fn set_qos_atmostonce(&mut self) {
+        self.flags.set_qos(QosLevel::AtMostOnce);
+    }
 
-        if self.packet_id.is_some() {
-            len += 2;
-        }
+    pub fn set_qos_atleastonce(&mut self, packet_id: u16) {
+        self.flags.set_qos(QosLevel::AtLeastOnce);
+        self.packet_id = Some(packet_id);
+    }
 
-        len += self.payload.len();
+    pub fn set_qos_exactlyonce(&mut self, packet_id: u16) {
+        self.flags.set_qos(QosLevel::ExactlyOnce);
+        self.packet_id = Some(packet_id);
+    }
 
-        let mut bytes = BytesMut::with_capacity(len);
-
-        bytes.put_u8(PacketType::PUBLISH as u8 | self.flags.byte);
-
-        encode_packet_length(&mut bytes, len)?;
-
-        encode_utf8(&mut bytes, &self.topic_name.clone().to_string())?;
-
-        if let Some(packet_id) = self.packet_id {
-            bytes.put_u16(packet_id);
-        }
-
-        bytes.put_slice(&self.payload);
-
-        return Ok(bytes.into());
+    pub fn topic(&self) -> &TopicName {
+        return &self.topic_name;
     }
 
     pub fn qos(&self) -> QosLevel {
@@ -163,6 +137,40 @@ impl PublishPacket {
 
     pub fn payload(&self) -> &Bytes {
         return &self.payload;
+    }
+}
+
+/// I know this is weird to extract into a trait, for justification of trait see [Message Assurance](crate::msg_assurance)
+///
+/// It will allow mutlitple different packet types to be used in the messaging queue, but the publish packet is the only packet that will
+/// ever be inserted into this queue. Therefore no other packet types utilize this trait.
+impl Encode for PublishPacket {
+    fn encode(&self) -> Result<Bytes, EncodeError> {
+        // add size for topic length.
+        let mut len = 2 + self.topic_name.len();
+        // add 2 for packet id
+
+        if self.packet_id.is_some() {
+            len += 2;
+        }
+
+        len += self.payload.len();
+
+        let mut bytes = BytesMut::with_capacity(len);
+
+        bytes.put_u8(PacketType::PUBLISH as u8 | self.flags.byte);
+
+        encode_packet_length(&mut bytes, len)?;
+
+        encode_utf8(&mut bytes, &self.topic_name.clone().to_string())?;
+
+        if let Some(packet_id) = self.packet_id {
+            bytes.put_u16(packet_id);
+        }
+
+        bytes.put_slice(&self.payload);
+
+        return Ok(bytes.into());
     }
 }
 
@@ -294,11 +302,22 @@ impl PublishFixedHeaderFlags {
     }
 }
 
+// impl Encode for Arc<PublishPacket> {
+//     fn encode(&self) -> Result<Bytes, EncodeError> {
+//         self.encode()
+//     }
+// }
+
+// impl Decode for PublishPacket {
+//     fn try_from_bytes(&self) -> Result<Self, T> {}
+// }
+
 #[cfg(test)]
 mod packet {
     use super::PublishPacket;
     use crate::topic::TopicName;
     use crate::v3::{FixedHeader, MqttPacket};
+    use crate::{Decode, Encode};
     use bytes::Buf;
     use bytes::Bytes;
 

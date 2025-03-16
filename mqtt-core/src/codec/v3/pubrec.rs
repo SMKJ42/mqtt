@@ -1,19 +1,19 @@
-use bytes::{Buf, BufMut, Bytes, BytesMut};
-
 use crate::{
     err::{DecodeError, DecodeErrorKind},
     v3::{FixedHeader, PacketType},
 };
+use bytes::{Buf, BufMut, Bytes, BytesMut};
+
 /*
- * The PUBCOMP Packet is the response to a PUBREL Packet.
- * It is the fourth and final packet of the QoS 2 protocol exchange.
+ * A PUBREC Packet is the response to a PUBLISH Packet with QoS 2.
+ * It is the second packet of the QoS 2 protocol exchange.
  */
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug)]
-pub struct PubCompPacket {
+pub struct PubRecPacket {
     id: u16,
 }
 
-impl PubCompPacket {
+impl PubRecPacket {
     pub fn new(id: u16) -> Self {
         return Self { id };
     }
@@ -22,7 +22,7 @@ impl PubCompPacket {
         if f_header.rest_len != 2 {
             return Err(DecodeError::new(
                 DecodeErrorKind::MalformedLength,
-                String::from("PUBCOMP packets can only contain a packet id."),
+                String::from("PUBREC packets can only contain a packet id."),
             ));
         } else {
             let id = bytes.get_u16();
@@ -33,7 +33,7 @@ impl PubCompPacket {
     pub fn encode(&self) -> Bytes {
         let mut bytes = BytesMut::new();
 
-        bytes.put_u8(PacketType::PUBCOMP as u8);
+        bytes.put_u8(PacketType::PUBREC as u8);
         bytes.put_u8(2);
         bytes.put_u16(self.id);
         return bytes.into();
@@ -46,19 +46,22 @@ impl PubCompPacket {
 
 #[cfg(test)]
 mod packet {
-    use super::PubCompPacket;
-    use crate::v3::{FixedHeader, MqttPacket};
+    use super::PubRecPacket;
+    use crate::{
+        v3::{FixedHeader, MqttPacket},
+        Decode,
+    };
     use bytes::Buf;
 
     #[test]
     fn serialize_deserialize() {
-        let packet = PubCompPacket::new(1234);
+        let packet = PubRecPacket::new(1234);
         let mut buf = packet.encode();
 
         let f_header = FixedHeader::decode(&mut buf).unwrap();
         buf.advance(f_header.header_len);
         let packet_de = MqttPacket::decode(f_header, &mut buf).expect("Could not decode packet");
 
-        assert_eq!(packet_de, MqttPacket::PubComp(packet));
+        assert_eq!(packet_de, MqttPacket::PubRec(packet));
     }
 }

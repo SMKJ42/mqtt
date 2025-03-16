@@ -5,15 +5,15 @@ use crate::{
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 
 /*
- * A PUBREC Packet is the response to a PUBLISH Packet with QoS 2.
- * It is the second packet of the QoS 2 protocol exchange.
+ * A PUBREL Packet is the response to a PUBREC Packet.
+ * It is the third packet of the QoS 2 protocol exchange.
  */
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug)]
-pub struct PubRecPacket {
+pub struct PubRelPacket {
     id: u16,
 }
 
-impl PubRecPacket {
+impl PubRelPacket {
     pub fn new(id: u16) -> Self {
         return Self { id };
     }
@@ -22,7 +22,7 @@ impl PubRecPacket {
         if f_header.rest_len != 2 {
             return Err(DecodeError::new(
                 DecodeErrorKind::MalformedLength,
-                String::from("PUBREC packets can only contain a packet id."),
+                String::from("PUBREL packets can only contain a packet id."),
             ));
         } else {
             let id = bytes.get_u16();
@@ -33,7 +33,8 @@ impl PubRecPacket {
     pub fn encode(&self) -> Bytes {
         let mut bytes = BytesMut::new();
 
-        bytes.put_u8(PacketType::PUBREC as u8);
+        // set packet type as PUBREL, and set the flag bit to 2
+        bytes.put_u8(PacketType::PUBREL as u8 | 2);
         bytes.put_u8(2);
         bytes.put_u16(self.id);
         return bytes.into();
@@ -46,19 +47,22 @@ impl PubRecPacket {
 
 #[cfg(test)]
 mod packet {
-    use super::PubRecPacket;
-    use crate::v3::{FixedHeader, MqttPacket};
+    use super::PubRelPacket;
+    use crate::{
+        v3::{FixedHeader, MqttPacket},
+        Decode,
+    };
     use bytes::Buf;
 
     #[test]
     fn serialize_deserialize() {
-        let packet = PubRecPacket::new(1234);
+        let packet = PubRelPacket::new(1234);
         let mut buf = packet.encode();
 
         let f_header = FixedHeader::decode(&mut buf).unwrap();
         buf.advance(f_header.header_len);
         let packet_de = MqttPacket::decode(f_header, &mut buf).expect("Could not decode packet");
 
-        assert_eq!(packet_de, MqttPacket::PubRec(packet));
+        assert_eq!(packet_de, MqttPacket::PubRel(packet));
     }
 }

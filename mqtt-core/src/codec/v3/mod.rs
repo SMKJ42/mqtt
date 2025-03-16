@@ -36,6 +36,8 @@ use crate::{
     io::decode_packet_length,
 };
 
+use super::{Decode, Encode};
+
 const PACKET_TYPE_BITS: u8 = 0b1111_0000;
 const PACKET_FLAG_BITS: u8 = 0b0000_1111;
 
@@ -62,25 +64,6 @@ pub enum MqttPacket {
 }
 
 impl MqttPacket {
-    pub fn decode(f_header: FixedHeader, bytes: &mut Bytes) -> Result<Self, DecodeError> {
-        return match f_header.type_ {
-            PacketType::CONNACK => Ok(Self::ConnAck(ConnAckPacket::decode(bytes)?)),
-            PacketType::CONNECT => Ok(Self::Connect(ConnectPacket::decode(bytes)?)),
-            PacketType::DISCONNECT => Ok(Self::Disconnect(DisconnectPacket::decode(f_header)?)),
-            PacketType::PINGREQ => Ok(Self::PingReq(PingReqPacket::decode(f_header)?)),
-            PacketType::PINGRESP => Ok(Self::PingResp(PingRespPacket::decode(f_header)?)),
-            PacketType::PUBACK => Ok(Self::PubAck(PubAckPacket::decode(f_header, bytes)?)),
-            PacketType::PUBCOMP => Ok(Self::PubComp(PubCompPacket::decode(f_header, bytes)?)),
-            PacketType::PUBLISH => Ok(Self::Publish(PublishPacket::decode(f_header, bytes)?)),
-            PacketType::PUBREL => Ok(Self::PubRel(PubRelPacket::decode(f_header, bytes)?)),
-            PacketType::PUBREC => Ok(Self::PubRec(PubRecPacket::decode(f_header, bytes)?)),
-            PacketType::SUBACK => Ok(Self::SubAck(SubAckPacket::decode(bytes)?)),
-            PacketType::SUBSCRIBE => Ok(Self::Subscribe(SubscribePacket::decode(bytes)?)),
-            PacketType::UNSUBACK => Ok(Self::UnsubAck(UnsubAckPacket::decode(f_header, bytes)?)),
-            PacketType::UNSUBSCRIBE => Ok(Self::Unsubscribe(UnsubscribePacket::decode(bytes)?)),
-        };
-    }
-
     pub fn encode(&self) -> Result<Bytes, EncodeError> {
         return match self {
             Self::ConnAck(packet) => Ok(packet.encode()),
@@ -97,6 +80,27 @@ impl MqttPacket {
             Self::Subscribe(packet) => packet.encode(),
             Self::UnsubAck(packet) => Ok(packet.encode()),
             Self::Unsubscribe(packet) => packet.encode(),
+        };
+    }
+}
+
+impl Decode<MqttPacket, DecodeError> for MqttPacket {
+    fn decode(f_header: FixedHeader, bytes: &mut Bytes) -> Result<Self, DecodeError> {
+        return match f_header.type_ {
+            PacketType::CONNACK => Ok(Self::ConnAck(ConnAckPacket::decode(bytes)?)),
+            PacketType::CONNECT => Ok(Self::Connect(ConnectPacket::decode(bytes)?)),
+            PacketType::DISCONNECT => Ok(Self::Disconnect(DisconnectPacket::decode(f_header)?)),
+            PacketType::PINGREQ => Ok(Self::PingReq(PingReqPacket::decode(f_header)?)),
+            PacketType::PINGRESP => Ok(Self::PingResp(PingRespPacket::decode(f_header)?)),
+            PacketType::PUBACK => Ok(Self::PubAck(PubAckPacket::decode(f_header, bytes)?)),
+            PacketType::PUBCOMP => Ok(Self::PubComp(PubCompPacket::decode(f_header, bytes)?)),
+            PacketType::PUBLISH => Ok(Self::Publish(PublishPacket::decode(f_header, bytes)?)),
+            PacketType::PUBREL => Ok(Self::PubRel(PubRelPacket::decode(f_header, bytes)?)),
+            PacketType::PUBREC => Ok(Self::PubRec(PubRecPacket::decode(f_header, bytes)?)),
+            PacketType::SUBACK => Ok(Self::SubAck(SubAckPacket::decode(bytes)?)),
+            PacketType::SUBSCRIBE => Ok(Self::Subscribe(SubscribePacket::decode(bytes)?)),
+            PacketType::UNSUBACK => Ok(Self::UnsubAck(UnsubAckPacket::decode(f_header, bytes)?)),
+            PacketType::UNSUBSCRIBE => Ok(Self::Unsubscribe(UnsubscribePacket::decode(bytes)?)),
         };
     }
 }

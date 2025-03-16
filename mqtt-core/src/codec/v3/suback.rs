@@ -78,6 +78,7 @@ mod packet {
     use crate::{
         qos::{QosLevel, SubAckQoS},
         v3::{FixedHeader, MqttPacket},
+        Decode,
     };
     use bytes::Buf;
 

@@ -128,6 +128,7 @@ mod packet {
         qos::QosLevel,
         topic::{TopicFilter, TopicSubscription},
         v3::{FixedHeader, MqttPacket},
+        Decode,
     };
     use bytes::Buf;
 

@@ -1,19 +1,20 @@
 // end state is PUBACK, but we do not need to maintain that state, only send the packet
 
 use crate::{
-    err::EncodeError,
     v3::{MqttPacket, PubRecPacket, PubRelPacket, PublishPacket},
+    Encode,
 };
-use bytes::Bytes;
 
 use core::time::Duration;
 use std::slice::{Iter, IterMut};
 use std::sync::Arc;
 
 #[derive(Clone, Debug)]
+/// Function names denote the state the packet is received in,
+/// starting with 'origin' for a new packet to be sent, then publish for a newly received packet with no release.
 pub struct ExactlyOnceList<P, I, B>
 where
-    P: PubPack,
+    P: Encode,
     I: Instant,
     B: ExponentialBackoff,
 {
@@ -92,7 +93,7 @@ where
 #[derive(Clone, Debug, PartialEq, PartialOrd, Eq, Ord)]
 pub struct ExactlyOncePacket<P, I, B>
 where
-    P: PubPack,
+    P: Encode,
     I: Instant,
     B: ExponentialBackoff,
 {
@@ -103,9 +104,10 @@ where
     retry_duration: B,
 }
 
+//// Tracks sent and received packets that have not reached the end of their lifetime.
 impl<P, I, B> ExactlyOnceList<P, I, B>
 where
-    P: PubPack,
+    P: Encode,
     I: Instant,
     B: ExponentialBackoff,
 {
@@ -113,7 +115,7 @@ where
         return Self { inner: vec![] };
     }
 
-    /// All Complete and Relay packets are removed, and their Ids are returned.
+    /// Removes the packets that have been released or completed inside the queue. Returns the id's of the packets.
     pub fn clean(&mut self) -> Vec<u16> {
         let mut id_idxs = vec![];
         for (idx, packet) in self.inner.iter().enumerate() {
@@ -220,7 +222,7 @@ where
 
 impl<P, I, B> ExactlyOncePacket<P, I, B>
 where
-    P: PubPack,
+    P: Encode,
     I: Instant,
     B: ExponentialBackoff,
 {
@@ -306,7 +308,7 @@ pub enum QoS2Stage {
 #[derive(Clone, Debug)]
 pub struct AtLeastOnceList<P, I, B>
 where
-    P: PubPack,
+    P: Encode,
     I: Instant,
     B: ExponentialBackoff,
 {
@@ -315,7 +317,7 @@ where
 
 impl<P, I, B> AtLeastOnceList<P, I, B>
 where
-    P: PubPack,
+    P: Encode,
     I: Instant,
     B: ExponentialBackoff,
 {
@@ -335,9 +337,10 @@ where
         return self.inner.len();
     }
 
+    /// Removes the packets that have been acknowledged inside the queue. Returns the id's of the packets.
     pub fn clean(&mut self) -> Vec<u16> {
         let mut id_idxs = vec![];
-        for (idx, packet) in self.inner.iter().enumerate() {
+        for (idx, packet) in self.iter().enumerate() {
             match packet.stage {
                 QoS1Stage::Ack => {
                     id_idxs.push((packet.new_id, idx));
@@ -356,6 +359,11 @@ where
     }
 }
 
+/// A struct representing a QoS1 packet.
+///
+//// Tracks sent packets that have not reached the end of their lifetime.
+///
+/// This struct is only required to be implemented for senders
 impl<I, B> AtLeastOnceList<Arc<PublishPacket>, I, B>
 where
     I: Instant,
@@ -393,7 +401,7 @@ where
 #[derive(Clone, Debug)]
 pub struct AtLeastOncePacket<P, I, B>
 where
-    P: PubPack,
+    P: Encode,
     I: Instant,
     B: ExponentialBackoff,
 {
@@ -406,7 +414,7 @@ where
 
 impl<P, I, B> AtLeastOncePacket<P, I, B>
 where
-    P: PubPack,
+    P: Encode,
     I: Instant,
     B: ExponentialBackoff,
 {
@@ -493,16 +501,6 @@ pub enum QoS1Stage {
     Origin,
     Publish,
     Ack,
-}
-
-pub trait PubPack {
-    fn as_bytes(&self) -> Result<Bytes, EncodeError>;
-}
-
-impl PubPack for Arc<PublishPacket> {
-    fn as_bytes(&self) -> Result<Bytes, EncodeError> {
-        self.encode()
-    }
 }
 
 impl Instant for std::time::Instant {

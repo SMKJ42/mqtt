@@ -7,6 +7,7 @@ use mqtt_core::{
         ConnectPacket, DisconnectPacket, MqttPacket, PingReqPacket, PubAckPacket, PubCompPacket,
         PubRecPacket, PubRelPacket, PublishPacket, SubscribePacket, UnsubscribePacket,
     },
+    Encode,
 };
 
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
@@ -125,4 +126,6 @@ impl<T: AsyncRead + AsyncWrite + Unpin> Drop for AsyncClient<T> {
     }
 }
 
-fn packet_response(packet: MqttPacket) {}
+// TODO: Create another client struct that handles the ack, rec, rel, comp packets and the associated stores.
+// I don't want this to be the only client available because this provides an unnecisary abstraction for specific use cases
+// where memory overhead is a concern and the two 64kb store would take up 128kb total...

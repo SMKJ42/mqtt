@@ -18,7 +18,7 @@ impl Mailbox {
         return Self(vec![]);
     }
 
-    pub fn queue(&mut self, mail: Mail) {
+    pub fn add_slot(&mut self, mail: Mail) {
         if !self.0.contains(&mail) {
             self.0.push(mail);
         }
@@ -28,7 +28,7 @@ impl Mailbox {
         return &mut self.0;
     }
 
-    pub fn remove(&mut self, filter: &TopicFilter) {
+    pub fn remove_slot(&mut self, filter: &TopicFilter) {
         while let Some(idx) = self
             .mail_mut()
             .iter()

@@ -44,7 +44,10 @@ impl PingReqPacket {
 #[cfg(test)]
 mod packet {
     use super::PingReqPacket;
-    use crate::v3::{FixedHeader, MqttPacket};
+    use crate::{
+        v3::{FixedHeader, MqttPacket},
+        Decode,
+    };
     use bytes::Buf;
 
     #[test]

@@ -108,7 +108,10 @@ impl ConnAckPacket {
 mod packet {
     use bytes::Buf;
 
-    use crate::v3::{FixedHeader, MqttPacket};
+    use crate::{
+        v3::{FixedHeader, MqttPacket},
+        Decode,
+    };
 
     use super::ConnAckPacket;
 

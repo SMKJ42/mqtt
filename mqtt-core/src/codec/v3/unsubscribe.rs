@@ -76,6 +76,7 @@ mod packet {
     use crate::{
         topic::TopicFilter,
         v3::{FixedHeader, MqttPacket},
+        Decode,
     };
     use bytes::Buf;
 

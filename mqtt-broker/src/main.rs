@@ -21,7 +21,7 @@ use mqtt_core::{
         ConnAckPacket, ConnectPacket, MqttPacket, PingRespPacket, PubAckPacket, PubCompPacket,
         PublishPacket, SubAckPacket, UnsubAckPacket,
     },
-    ConnectReturnCode,
+    ConnectReturnCode, Encode,
 };
 
 use sheesh::user::UserMeta;
@@ -584,7 +584,7 @@ async fn handle_packet<S: AsyncRead + AsyncWrite + Unpin>(
         }
         MqttPacket::Unsubscribe(in_packet) => {
             for filter in in_packet.filters() {
-                mailbox.remove(filter);
+                mailbox.remove_slot(filter);
             }
             stream
                 .write_all(&UnsubAckPacket::new(in_packet.id()).encode())

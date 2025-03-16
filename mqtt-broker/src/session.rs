@@ -8,7 +8,7 @@ use mqtt_core::topic::TopicFilter;
 use mqtt_core::v3::{
     ConnectPacket, MqttPacket, PubAckPacket, PubRecPacket, PubRelPacket, PublishPacket, Will,
 };
-use mqtt_core::ConnectReturnCode;
+use mqtt_core::{ConnectReturnCode, Encode};
 
 use r2d2_sqlite::SqliteConnectionManager;
 

@@ -691,7 +691,10 @@ impl Protocol {
 #[cfg(test)]
 mod packet {
 
-    use crate::v3::{FixedHeader, MqttPacket};
+    use crate::{
+        v3::{FixedHeader, MqttPacket},
+        Decode,
+    };
 
     use super::ConnectPacket;
     use bytes::Buf;
