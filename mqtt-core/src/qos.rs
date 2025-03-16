@@ -1,6 +1,11 @@
+use std::u8;
+
+use serde::{de::Visitor, Deserialize, Serialize};
+
 use crate::err::{DecodeError, DecodeErrorKind};
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug, Hash)]
+#[repr(u8)]
 pub enum QosLevel {
     AtMostOnce = 0,
     AtLeastOnce = 1,
@@ -81,5 +86,45 @@ impl TryFrom<u8> for SubAckQoS {
         } else {
             return Ok(Self::QOS(QosLevel::try_from(value)?));
         }
+    }
+}
+
+struct QosLevelVisitor;
+
+impl<'de> Visitor<'de> for QosLevelVisitor {
+    type Value = QosLevel;
+
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+        formatter.write_str("an integer between 0 and 2^8")
+    }
+
+    fn visit_u8<E>(self, value: u8) -> Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        return QosLevel::try_from(value).map_err(|e| {
+            E::invalid_value(
+                serde::de::Unexpected::Unsigned(value as u64),
+                &format!("values 0, 1 or 2").as_str(),
+            )
+        });
+    }
+}
+
+impl<'de> Deserialize<'de> for QosLevel {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        return deserializer.deserialize_u8(QosLevelVisitor);
+    }
+}
+
+impl Serialize for QosLevel {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_u8(*self as u8)
     }
 }
