@@ -1,11 +1,6 @@
 use core::net::Ipv4Addr;
 
-use std::{
-    fs::File,
-    io::Read,
-    path::{Path, PathBuf},
-    str::FromStr,
-};
+use std::{fs::File, io::Read, path::Path, str::FromStr};
 
 use log::LevelFilter;
 use mqtt_core::qos::QosLevel;
@@ -36,13 +31,8 @@ impl MqttConfig {
         return self.logger.console;
     }
 
-    pub fn user_db(&self) -> PathBuf {
-        match &self.users.user_db_path {
-            Some(path) => {
-                PathBuf::from_str(&path).expect(&format!("Invalid user database path: {path}"))
-            }
-            None => PathBuf::from_str("users.db").unwrap(),
-        }
+    pub fn user_db_connection(&self) -> &str {
+        return &self.users.db_connection;
     }
 
     pub fn require_auth(&self) -> bool {
@@ -126,14 +116,14 @@ impl Default for Connection {
 #[derive(Deserialize, Serialize)]
 pub struct Users {
     authenticate: bool,
-    user_db_path: Option<String>,
+    db_connection: String,
 }
 
 impl Default for Users {
     fn default() -> Self {
         return Self {
             authenticate: false,
-            user_db_path: None,
+            db_connection: String::from("user.db"),
         };
     }
 }

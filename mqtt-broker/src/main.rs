@@ -6,7 +6,7 @@ mod session;
 mod topic;
 
 use core::str;
-use std::{path::PathBuf, sync::Arc};
+use std::{net::IpAddr, path::PathBuf, sync::Arc};
 
 use bytes::Bytes;
 use config::MqttConfig;
@@ -24,7 +24,7 @@ use mqtt_core::{
     ConnectReturnCode, Encode,
 };
 
-use sheesh::user::UserMeta;
+use sheesh::session::Session;
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader},
     join,
@@ -54,7 +54,7 @@ impl MqttServer {
     /// Creates a new MqttServer instance holding a mutex to topics and a mutex to disconnected sessions.
     pub fn new(config: MqttConfig) -> Self {
         MqttServer {
-            auth_manager: AuthManager::new(config.user_db()),
+            auth_manager: AuthManager::new(config.user_db_connection()),
             topics: Arc::new(RwLock::new(ServerTopics::new(
                 config.max_queued_messages(),
                 config.default_qos(),
@@ -84,12 +84,17 @@ impl MqttServer {
             server.clean_expired_sessions().await;
             match listener.accept().await {
                 Ok((mut stream, addr)) => {
+                    let ip_addr = stream
+                        .peer_addr()
+                        .map(|sock| Some(sock.ip()))
+                        .unwrap_or(None);
+
                     log::info!("New connection attempt: {addr}");
 
                     let server_clone = Arc::clone(&server);
 
                     tokio::spawn(async move {
-                        if let Err(err) = handle_client(&server_clone, &mut stream).await {
+                        if let Err(err) = handle_client(&server_clone, &mut stream, ip_addr).await {
                             log::warn!("Error handling client: {err}, Closing connection: {addr}")
                         } else {
                             log::info!("Gracefully closing connection: {addr}")
@@ -131,6 +136,11 @@ impl MqttServer {
 
         loop {
             let (stream, addr) = listener.accept().await.unwrap();
+            let ip_addr = stream
+                .peer_addr()
+                .map(|sock| Some(sock.ip()))
+                .unwrap_or(None);
+
             let acceptor = acceptor.clone();
 
             server.clean_expired_sessions().await;
@@ -143,7 +153,9 @@ impl MqttServer {
                     let mut tls_stream = BufReader::new(tls_stream);
 
                     tokio::spawn(async move {
-                        if let Err(err) = handle_client(&server_clone, &mut tls_stream).await {
+                        if let Err(err) =
+                            handle_client(&server_clone, &mut tls_stream, ip_addr).await
+                        {
                             log::error!("Error handling client: {err}");
                             log::warn!("Closing connection: {addr}")
                         } else {
@@ -256,8 +268,9 @@ impl MqttServer {
 async fn handle_client<S: AsyncReadExt + AsyncWrite + Unpin>(
     server: &Arc<MqttServer>,
     stream: &mut S,
+    ip_addr: Option<IpAddr>,
 ) -> Result<(), ServerError> {
-    let active_session = handle_first_packet(&server, stream).await?;
+    let active_session = handle_first_packet(&server, stream, ip_addr).await?;
 
     log::info!("connected");
 
@@ -289,6 +302,7 @@ async fn handle_connect_packet<S: AsyncWriteExt + AsyncReadExt + Unpin>(
     server: &Arc<MqttServer>,
     packet: ConnectPacket,
     stream: &mut S,
+    ip_addr: Option<IpAddr>,
 ) -> Result<ActiveSession, ServerError> {
     let mut connack = ConnAckPacket::new(false, ConnectReturnCode::Accept);
 
@@ -297,7 +311,7 @@ async fn handle_connect_packet<S: AsyncWriteExt + AsyncReadExt + Unpin>(
     // A little awkward of a join, but hey... it works... right?
     let sessions_fut = server.dc_sessions.lock();
     let (mut sessions, user) = if server.config.require_auth() {
-        let handle = join!(sessions_fut, authenticate_user(server, &packet));
+        let handle = join!(sessions_fut, authenticate_user(server, &packet, ip_addr));
         (handle.0, Some(handle.1?))
     } else {
         (sessions_fut.await, None)
@@ -326,11 +340,14 @@ async fn handle_connect_packet<S: AsyncWriteExt + AsyncReadExt + Unpin>(
 async fn authenticate_user(
     server: &Arc<MqttServer>,
     packet: &ConnectPacket,
-) -> Result<UserMeta, ServerError> {
+    ip_addr: Option<IpAddr>,
+) -> Result<Session, ServerError> {
     match (packet.username(), packet.password()) {
         (Some(username), Some(password)) => {
             let password = str::from_utf8(&password).unwrap();
-            return server.auth_manager.verify_credentials(username, password);
+            return server
+                .auth_manager
+                .verify_credentials(username, password, ip_addr);
         }
         _ => {
             return Err(ServerError::new(
@@ -358,6 +375,7 @@ async fn authenticate_user(
 async fn handle_first_packet<S: AsyncWriteExt + AsyncReadExt + Unpin>(
     server: &Arc<MqttServer>,
     stream: &mut S,
+    ip_addr: Option<IpAddr>,
 ) -> Result<Option<ActiveSession>, ServerError> {
     loop {
         match read_packet_with_timeout::<_, ServerError>(stream).await {
@@ -373,7 +391,7 @@ async fn handle_first_packet<S: AsyncWriteExt + AsyncReadExt + Unpin>(
 
                             MqttPacket::Connect(packet) => {
                                 // return Ok(Some( handle_connect().await));
-                                return handle_connect_packet(server, packet, stream).await.map(|x| Some(x));
+                                return handle_connect_packet(server, packet, stream, ip_addr).await.map(|x| Some(x));
                             }
                             _ => {
                                 return Err(ServerError::new(

@@ -5,5 +5,6 @@
 *flamegraph.svg
 mqtt-broker/logs
 .DS_Store
+*.json
 config.toml
 *.db

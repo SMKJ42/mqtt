@@ -1,5 +1,4 @@
 [workspace]
-members = [ "mqtt-client", "mqtt-broker", "mqtt-core" ]
+members = ["mqtt-client", "mqtt-broker", "mqtt-core", "rdme-cli"]
 
 resolver = "2"
-

@@ -10,15 +10,15 @@ use mqtt_core::v3::{
 };
 use mqtt_core::{ConnectReturnCode, Encode};
 
+use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
 
 use sheesh::harness::sqlite::user::SqliteHarnessUser;
-use sheesh::harness::stateless::{StatelessSession, StatelessToken};
-use sheesh::harness::DbHarness;
+use sheesh::harness::stateless::{init_stateless_sqlite_config, StatelessSessionManager};
 use sheesh::id::DefaultIdGenerator;
-use sheesh::session::{SessionManager, SessionManagerConfig};
+use sheesh::session::Session as AuthSession;
 
-use std::path::PathBuf;
+use std::net::IpAddr;
 use std::{collections::HashMap, sync::Arc, time::Instant};
 
 use tokio::io::{AsyncWrite, AsyncWriteExt};
@@ -29,7 +29,7 @@ pub type ExactlyOnceListType = ExactlyOnceList<Arc<PublishPacket>, Instant, Retr
 #[derive(Debug, Clone)]
 pub struct ActiveSession {
     client_id: String,
-    user: Option<UserMeta>,
+    auth_session: Option<AuthSession>,
     will: Option<Will>,
     keep_alive: u64,
     last_read: Instant,
@@ -40,10 +40,10 @@ pub struct ActiveSession {
 }
 
 impl ActiveSession {
-    pub fn new(packet: ConnectPacket, user: Option<UserMeta>) -> Self {
+    pub fn new(packet: ConnectPacket, auth_session: Option<AuthSession>) -> Self {
         return Self {
             client_id: packet.client_id().to_string(),
-            user,
+            auth_session,
             will: packet.will,
             keep_alive: packet.keep_alive.into(),
             last_read: Instant::now(),
@@ -185,7 +185,7 @@ impl TryFrom<(DisconnectedSession, ConnectPacket)> for ActiveSession {
 
         return Ok(Self {
             client_id: packet.client_id.to_owned(),
-            user: dc_session.user,
+            auth_session: dc_session.auth_session,
             will: packet.will.to_owned(),
             keep_alive: packet.keep_alive.into(),
             last_read: Instant::now(),
@@ -201,7 +201,7 @@ impl From<ActiveSession> for DisconnectedSession {
     fn from(value: ActiveSession) -> Self {
         Self {
             client_id: value.client_id,
-            user: value.user,
+            auth_session: value.auth_session,
             keep_alive: value.keep_alive,
             last_read: value.last_read,
             qos1_packets: value.qos1_packets,
@@ -216,7 +216,7 @@ impl From<ActiveSession> for DisconnectedSession {
 #[derive(Clone)]
 pub struct DisconnectedSession {
     client_id: String,
-    user: Option<UserMeta>,
+    auth_session: Option<AuthSession>,
     keep_alive: u64,
     last_read: Instant,
     qos1_packets: AtLeastOnceListType,
@@ -304,23 +304,17 @@ impl DisconnectedSessions {
  *
  */
 
-use sheesh::user::{UserManager, UserManagerConfig, UserMeta};
+use sheesh::user::UserManager;
 
 pub struct AuthManager {
     user_manager: UserManager<DefaultIdGenerator, SqliteHarnessUser>,
-    session_manager: SessionManager<DefaultIdGenerator, StatelessSession, StatelessToken>,
+    session_manager: StatelessSessionManager,
 }
 
 impl AuthManager {
-    pub fn new(path: PathBuf) -> Self {
-        let conn_manager = SqliteConnectionManager::file(path);
-        let pool = r2d2::Pool::new(conn_manager).unwrap();
-        let harness = DbHarness::new_stateless_sqlite(pool);
-
-        harness.init_tables().unwrap();
-
-        let user_manager = UserManagerConfig::default().init(harness.user);
-        let session_manager = SessionManagerConfig::default().init(harness.session, harness.token);
+    pub fn new(path: &str) -> Self {
+        let pool = Pool::new(SqliteConnectionManager::file(path)).unwrap();
+        let (user_manager, session_manager) = init_stateless_sqlite_config(pool).unwrap();
 
         return Self {
             user_manager,
@@ -328,13 +322,18 @@ impl AuthManager {
         };
     }
 
-    pub fn verify_credentials(&self, username: &str, pwd: &str) -> Result<UserMeta, ServerError> {
+    pub fn verify_credentials(
+        &self,
+        username: &str,
+        pwd: &str,
+        ip_addr: Option<IpAddr>,
+    ) -> Result<AuthSession, ServerError> {
         // "user.login" may seem unintuitive, but the authmanager is utilizing StatelessSession, and therefore we do not need to hold on to a session token.
         // We are only authenticating the username / password and holding the connection.
         // If the client disconnects, they will have to provide their username and password in the connect packet.
         match self
             .user_manager
-            .login(&self.session_manager, username, pwd)
+            .login(&self.session_manager, username, pwd, ip_addr)
         {
             Ok((user, _, _)) => return Ok(user),
             Err(_) => {
