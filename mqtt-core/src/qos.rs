@@ -95,19 +95,23 @@ impl<'de> Visitor<'de> for QosLevelVisitor {
     type Value = QosLevel;
 
     fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-        formatter.write_str("an integer between 0 and 2^8")
+        formatter.write_str("an integer between 0 and 2 (inclusive)")
     }
 
-    fn visit_u8<E>(self, value: u8) -> Result<Self::Value, E>
+    fn visit_i64<E>(self, value: i64) -> Result<Self::Value, E>
     where
         E: serde::de::Error,
     {
-        return QosLevel::try_from(value).map_err(|_| {
-            E::invalid_value(
-                serde::de::Unexpected::Unsigned(value as u64),
-                &format!("values 0, 1 or 2").as_str(),
-            )
-        });
+        if value <= i8::MAX as i64 {
+            QosLevel::try_from(value as u8).map_err(|_| {
+                E::invalid_value(serde::de::Unexpected::Signed(value), &"values 0, 1 or 2")
+            })
+        } else {
+            Err(E::invalid_value(
+                serde::de::Unexpected::Signed(value),
+                &"a valid QoS level (0, 1, or 2)",
+            ))
+        }
     }
 }
 
@@ -116,7 +120,7 @@ impl<'de> Deserialize<'de> for QosLevel {
     where
         D: serde::Deserializer<'de>,
     {
-        return deserializer.deserialize_u8(QosLevelVisitor);
+        return deserializer.deserialize_i64(QosLevelVisitor);
     }
 }
 

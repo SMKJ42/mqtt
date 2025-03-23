@@ -314,7 +314,7 @@ pub struct AuthManager {
 impl AuthManager {
     pub fn new(path: &str) -> Self {
         let pool = Pool::new(SqliteConnectionManager::file(path)).unwrap();
-        let (user_manager, session_manager) = init_stateless_sqlite_config(pool).unwrap();
+        let (user_manager, session_manager) = init_stateless_sqlite_config(pool);
 
         return Self {
             user_manager,

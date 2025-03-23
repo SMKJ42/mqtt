@@ -31,10 +31,6 @@ impl MqttConfig {
         return self.logger.console;
     }
 
-    pub fn user_db_connection(&self) -> &str {
-        return &self.users.db_connection;
-    }
-
     pub fn require_auth(&self) -> bool {
         return self.users.authenticate;
     }
@@ -45,6 +41,10 @@ impl MqttConfig {
 
     pub fn default_qos(&self) -> QosLevel {
         return self.broker.default_qos;
+    }
+
+    pub fn user_db_connection(&self) -> &str {
+        return &self.connection.db_connection;
     }
 
     pub fn log_level(&self) -> LevelFilter {
@@ -101,6 +101,7 @@ struct Connection {
     tls: bool,
     ip: Ipv4Addr,
     port: u16,
+    db_connection: String,
 }
 
 impl Default for Connection {
@@ -109,6 +110,7 @@ impl Default for Connection {
             tls: false,
             ip: Ipv4Addr::new(127, 0, 0, 1),
             port: 1883,
+            db_connection: String::from("user.db"),
         };
     }
 }
@@ -116,14 +118,12 @@ impl Default for Connection {
 #[derive(Deserialize, Serialize)]
 pub struct Users {
     authenticate: bool,
-    db_connection: String,
 }
 
 impl Default for Users {
     fn default() -> Self {
         return Self {
             authenticate: false,
-            db_connection: String::from("user.db"),
         };
     }
 }
