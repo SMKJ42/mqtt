@@ -122,7 +122,7 @@ where
 
 impl<T: AsyncRead + AsyncWrite + Unpin> Drop for AsyncClient<T> {
     fn drop(&mut self) {
-        block_on(self.disconnect()).unwrap();
+        let _ = block_on(self.disconnect());
     }
 }
 
