@@ -173,3 +173,8 @@ pub async fn subscribe_to_topic_filter<S: AsyncWrite + Unpin>(
     }
     return Ok(sub_allowed);
 }
+
+// thread 'main' panicked at mqtt-client/examples/sub.rs:64:58:
+// called `Result::unwrap()` on an `Err` value: ClientError { kind: IoError(Os { code: 54, kind: ConnectionReset, message: "Connection reset by peer" }), message: "" }
+// note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+// liam@Mac mqtt-client %

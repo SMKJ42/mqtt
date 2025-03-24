@@ -1,4 +1,4 @@
-use bytes::Bytes;
+use bytes::{Buf, Bytes};
 
 mod connack;
 mod connect;
@@ -31,17 +31,17 @@ pub use subscribe::SubscribePacket;
 pub use unsuback::UnsubAckPacket;
 pub use unsubscribe::UnsubscribePacket;
 
-use crate::{
-    err::{DecodeError, DecodeErrorKind, EncodeError},
-    io::decode_packet_length,
-};
+use crate::err::{DecodeError, DecodeErrorKind, EncodeError};
 
 use super::{Decode, Encode};
 
 const PACKET_TYPE_BITS: u8 = 0b1111_0000;
 const PACKET_FLAG_BITS: u8 = 0b0000_1111;
 
-pub fn decode_packet(f_header: FixedHeader, buf: &mut Bytes) -> Result<MqttPacket, DecodeError> {
+pub fn decode_mqtt_packet(
+    f_header: FixedHeader,
+    buf: &mut Bytes,
+) -> Result<MqttPacket, DecodeError> {
     MqttPacket::decode(f_header, buf)
 }
 
@@ -122,18 +122,57 @@ impl FixedHeader {
             ));
         }
 
-        let byte = bytes[0];
-        let type_ = PacketType::try_from(byte)?;
-        let flags = HeaderFlags::try_from((type_, byte))?;
-
-        let (header_len, rest_len) = decode_packet_length(bytes)?;
+        let type_byte = bytes.get_u8();
+        let type_ = PacketType::try_from(type_byte)?;
+        let flags = HeaderFlags::try_from((type_, type_byte))?;
+        let (len_len, rest_len) = Self::decode_length(&bytes)?;
+        bytes.advance(len_len);
 
         return Ok(Self {
             type_,
             flags,
-            header_len,
+            // encoded length + 1 to account for the packet type byte.
+            header_len: len_len + 1,
             rest_len,
         });
+    }
+
+    /*
+     * https://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc398718023
+     * Section 2.2.3
+     * Control Packets of size up to 268,435,455 (256 MB). The representation of this number on the wire is: 0xFF, 0xFF, 0xFF, 0x7F.
+     */
+
+    /// Will NOT advance the internal buffer. To keep alignment with the buffer,
+    /// the user is responsible for advancing the buffer's pointer.
+    ///
+    /// ## Returns (fixed_header_len, rest_len)
+    pub fn decode_length(bytes: &[u8]) -> Result<(usize, usize), DecodeError> {
+        let mut mult = 1;
+        let mut len: usize = 0;
+        let mut i = 0;
+
+        for c in bytes.iter().take(4) {
+            len += (*c as usize & 127) * mult; // Add the 7 least significant bits of c to value
+            mult *= 128;
+            i += 1;
+            // check most significant bit (0b1000_0000) for a set flag, if set to zero - break loop, else continue.
+            if (c & 128) == 0 {
+                break;
+            };
+        }
+
+        if len > 127 ^ 4 {
+            return Err(DecodeError::new(
+                DecodeErrorKind::MalformedLength,
+                format!(
+                    "Packet payload exceeded max length of 127^4, found length {}",
+                    len
+                ),
+            ));
+        };
+
+        return Ok((i, len));
     }
 
     pub fn set_flags(&mut self, flags: HeaderFlags) {
@@ -268,7 +307,7 @@ impl TryFrom<u8> for PacketType {
             _ => {
                 return Err(DecodeError::new(
                     DecodeErrorKind::PacketType,
-                    format!("Packet type {value} is not a valid packet."),
+                    format!("Packet type {} is not a valid packet.", value >> 4),
                 ))
             }
         };

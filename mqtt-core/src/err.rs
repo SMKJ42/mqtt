@@ -209,7 +209,7 @@ pub mod server {
 
     impl Display for ServerError {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            return write!(f, "{}. {}", self.kind, self.message);
+            return write!(f, "{}: {}", self.kind, self.message);
         }
     }
 }

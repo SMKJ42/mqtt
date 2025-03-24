@@ -7,12 +7,10 @@ use crate::err::{DecodeError, DecodeErrorKind, EncodeError, EncodeErrorKind};
  * most 4 bytes.
  */
 
-const MAX_LEN_BYTES: usize = 5;
-
-const MAX_LEN: usize = (128 as u64).pow(4) as usize;
+const MAX_LEN: usize = (128 as u64).pow(4) as usize - 1;
 
 pub fn encode_packet_length(bytes: &mut BytesMut, mut len: usize) -> Result<usize, EncodeError> {
-    if len >= MAX_LEN {
+    if len > MAX_LEN {
         return Err(EncodeError::new(
             EncodeErrorKind::OversizedPayload,
             format!(
@@ -105,76 +103,26 @@ pub fn decode_u16_len(bytes: &mut Bytes) -> Result<u16, DecodeError> {
     return Ok(len);
 }
 
-/// Will NOT advance the internal buffer. To keep alignment with the buffer,
-/// the user is responsible for advancing the buffer's pointer.
-///
-/// ## Returns (var_len, rest_len, buf)
-/// where 'var_len' is the length of the encoding, 'rest_len' is the remaining length of the packet and 'buf' returns ownership of the buf
-pub fn decode_packet_length<'a>(bytes: &Bytes) -> Result<(usize, usize), DecodeError> {
-    let mut c: u8;
-    let mut mult = 1;
-    let mut len: usize = 0;
-
-    // We could handle the overflow edge case here, by specifying 0..4
-    // However, we would lose context of the error.
-    for i in 1..MAX_LEN_BYTES {
-        c = bytes[i];
-
-        len += (c as usize & 127) * mult; // Add the 7 least significant bits of c to value
-        mult *= 128;
-
-        // check most significant bit (0b1000_0000) for a set flag, if set to zero - break loop, else continue.
-        if (c & 128) == 0 {
-            return Ok((i + 1, len));
-        };
-    }
-
-    /*
-     * https://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc398718023
-     * Section 2.2.3
-     * Control Packets of size up to 268,435,455 (256 MB). The representation of this number on the wire is: 0xFF, 0xFF, 0xFF, 0x7F.
-     *
-     * If we hit the following branch of code, we are touching the 4th bit, and need to check the max value.
-     */
-
-    let c = bytes[3];
-
-    // MSB of byte siginifies a continuation of encoded length, if MSB is set or we are at max value of bits (i.e. 128), we have exceeded max allowable packet length.
-    if c >= 128 {
-        return Err(DecodeError::new(
-            DecodeErrorKind::MalformedLength,
-            format!(
-                "Packet payload exceeded max length of 127^4, found length {}",
-                len
-            ),
-        ));
-    } else {
-        len += (c as usize & 127) * mult;
-        return Ok((5, len));
-    }
-}
-
-// pub fn serialize_packet(packet: MqttPacket, int: u32) -> Vec<u8> {
-//     unimplemented!()
-// }
-
 #[cfg(test)]
 mod header_length {
     use bytes::{Bytes, BytesMut};
 
-    use crate::io::{decode_packet_length, encode_packet_length};
+    use crate::{
+        io::{encode_packet_length, MAX_LEN},
+        v3::FixedHeader,
+    };
 
     #[test]
     fn encode_length() {
         let buf: &[u8] = &[0, 0, 0, 0];
         let mut bytes = BytesMut::from(buf);
-        let len = (128 as u64).pow(4) as usize - 1;
+        let len = MAX_LEN;
         let size = encode_packet_length(&mut bytes.clone(), len);
 
         assert!(size.is_ok());
         assert_eq!(size.unwrap(), 4);
 
-        let len = (128 as u64).pow(4) as usize;
+        let len = MAX_LEN as usize + 1;
         let size = encode_packet_length(&mut bytes, len);
 
         assert!(size.is_err())
@@ -187,7 +135,7 @@ mod header_length {
         let bytes = Bytes::from(mut_bytes);
 
         let (encode_len, rest_len) =
-            decode_packet_length(&bytes).expect("Error decoding valid length");
+            FixedHeader::decode_length(&bytes).expect("Error decoding valid length");
 
         assert_eq!(encode_len, 5);
         assert_eq!(rest_len, (128 as usize).pow(4) - 1);
@@ -198,7 +146,7 @@ mod header_length {
         let buf: &[u8] = &[0, 128, 128, 128, 128];
         let bytes = Bytes::from(buf);
 
-        let out = decode_packet_length(&bytes);
+        let out = FixedHeader::decode_length(&bytes);
 
         assert!(out.is_err());
     }
@@ -209,7 +157,7 @@ mod header_length {
         let bytes = Bytes::from(buf);
 
         let (encode_len, rest_len) =
-            decode_packet_length(&bytes).expect("Error decoding valid length");
+            FixedHeader::decode_length(&bytes).expect("Error decoding valid length");
 
         assert_eq!(encode_len, 2);
         assert_eq!(rest_len, 127);
@@ -219,17 +167,17 @@ mod header_length {
 use futures::FutureExt;
 use std::time::Duration;
 use tokio::{
-    io::{self, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
+    io::{self, AsyncBufRead, AsyncBufReadExt},
     time::sleep,
 };
 
 use crate::{
     err,
-    v3::{decode_packet, FixedHeader, MqttPacket},
+    v3::{decode_mqtt_packet, FixedHeader, MqttPacket},
 };
 
 pub async fn read_packet_with_timeout<
-    S: AsyncReadExt + AsyncRead + AsyncWriteExt + Unpin,
+    S: AsyncBufRead + Unpin,
     E: From<io::Error> + From<err::DecodeError>,
 >(
     stream: &mut S,
@@ -241,49 +189,40 @@ pub async fn read_packet_with_timeout<
         _ = sleep(Duration::from_micros(100)).fuse() => {
             return Ok(None);
         }
-        out = read_packet(stream).fuse() => {
-            return out.map(|packet| Some(packet));
+        res = cancel_safe(stream).fuse() => {
+            if let Ok(res) = &res {
+                let (_,  size) = res;
+                stream.consume(*size);
+            }
+            return res.map(|x| x.0);
         }
     }
 }
 
-pub async fn read_packet<
-    S: AsyncReadExt + AsyncWrite + Unpin,
-    E: From<io::Error> + From<err::DecodeError>,
->(
+pub async fn cancel_safe<S: AsyncBufRead + Unpin, E: From<err::DecodeError>>(
     stream: &mut S,
-) -> Result<MqttPacket, E> {
-    // read in the packet type and the encoded length.
-    let mut header_buf = [0; 5];
-    let f_header: FixedHeader;
+) -> Result<(Option<MqttPacket>, usize), E> {
+    // let mut pin_stream = Pin::new(stream);
+    // let mut pin_stream = Pin::new(stream);
+    let n = stream.fill_buf().await.unwrap(); // TODO: unwrap...
 
-    // read in packet type.
-    header_buf[0] = stream.read_u8().await?;
-
-    // read in encoded packet length.
-    let mut i = 1;
-    while i < 6 {
-        let byte = stream.read_u8().await?;
-        header_buf[i] = byte;
-        if byte < 128 {
-            break;
-        }
-
-        i += 1;
+    if n.len() == 0 {
+        return Ok((None, 0));
     }
 
-    let mut header_buf = Bytes::copy_from_slice(&header_buf[0..i + 1]);
-    f_header = FixedHeader::decode(&mut header_buf)?;
+    let (packet, size) = decode_any(Bytes::from(n.to_owned())).await?;
 
-    let mut buf = BytesMut::new();
-    buf.resize(f_header.rest_len(), 0);
+    return Ok((Some(packet), size));
+}
 
-    // extract the variable header and payload then parse the variable header.
-    stream.read_exact(&mut buf).await?;
-
-    match decode_packet(f_header, &mut buf.into()) {
+pub async fn decode_any<E: From<err::DecodeError>>(
+    mut bytes: Bytes,
+) -> Result<(MqttPacket, usize), E> {
+    let f_header = FixedHeader::decode(&mut bytes)?;
+    let _ = bytes.split_off(f_header.rest_len());
+    match decode_mqtt_packet(f_header, &mut bytes) {
         Ok(packet) => {
-            return Ok(packet);
+            return Ok((packet, f_header.rest_len() + f_header.header_len()));
         }
         Err(err) => {
             return Err(err.into());

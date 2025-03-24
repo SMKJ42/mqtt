@@ -43,6 +43,8 @@ where
                 .await
                 .unwrap()
             {
+                println!("packet: {:?}", packet);
+
                 match packet {
                     MqttPacket::ConnAck(..) => return Ok(()),
                     _ => {

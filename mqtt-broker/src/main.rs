@@ -89,15 +89,15 @@ impl MqttServer {
                         .map(|sock| Some(sock.ip()))
                         .unwrap_or(None);
 
-                    log::info!("New connection attempt: {addr}");
+                    log::info!("New connection attempt - {addr}");
 
                     let server_clone = Arc::clone(&server);
 
                     tokio::spawn(async move {
                         if let Err(err) = handle_client(&server_clone, &mut stream, ip_addr).await {
-                            log::warn!("Error handling client: {err}, Closing connection: {addr}")
+                            log::warn!("Error handling client: {err} - {addr}")
                         } else {
-                            log::info!("Gracefully closing connection: {addr}")
+                            log::info!("Gracefully closing connection - {addr}")
                         }
                     });
                 }
@@ -372,13 +372,13 @@ async fn authenticate_user(
 ///
 /// This function is NOT part of the main event loop of the client's connection instance.
 ///
-async fn handle_first_packet<S: AsyncWriteExt + AsyncReadExt + Unpin>(
+async fn handle_first_packet<S: AsyncWrite + AsyncReadExt + Unpin>(
     server: &Arc<MqttServer>,
     stream: &mut S,
     ip_addr: Option<IpAddr>,
 ) -> Result<Option<ActiveSession>, ServerError> {
     loop {
-        match read_packet_with_timeout::<_, ServerError>(stream).await {
+        match read_packet_with_timeout::<_, ServerError>(&mut BufReader::new(&mut *stream)).await {
             Ok(packet_opt) => {
                 if let Some(packet) = packet_opt {
                     match packet {
@@ -421,7 +421,9 @@ async fn handle_session<S: AsyncRead + AsyncWrite + Unpin>(
 
     loop {
         // read in all packets.
-        while let Some(packet) = read_packet_with_timeout::<_, ServerError>(stream).await? {
+        while let Some(packet) =
+            read_packet_with_timeout::<_, ServerError>(&mut BufReader::new(&mut *stream)).await?
+        {
             if session.timed_out() {
                 // if session has timed out, exit the main event loop
                 return Ok(());

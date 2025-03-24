@@ -35,6 +35,7 @@ async fn main() {
         client.publish(packet).await.unwrap();
 
         println!("idx: {idx}");
+
         idx += 1;
     }
 }
