@@ -106,7 +106,6 @@ impl ConnAckPacket {
 
 #[cfg(test)]
 mod packet {
-    use bytes::Buf;
 
     use crate::{
         v3::{FixedHeader, MqttPacket},
@@ -121,7 +120,6 @@ mod packet {
         let mut buf = packet.encode();
 
         let f_header = FixedHeader::decode(&mut buf).unwrap();
-        buf.advance(f_header.header_len);
         println!("Buf: {:?}", buf);
 
         let packet_de = MqttPacket::decode(f_header, &mut buf).expect("Could not decode packet");

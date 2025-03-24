@@ -317,7 +317,6 @@ mod packet {
     use crate::topic::TopicName;
     use crate::v3::{FixedHeader, MqttPacket};
     use crate::{Decode, Encode};
-    use bytes::Buf;
     use bytes::Bytes;
 
     // Generic Packet test
@@ -330,7 +329,6 @@ mod packet {
         let mut buf = packet.encode().unwrap();
 
         let f_header = FixedHeader::decode(&mut buf).unwrap();
-        buf.advance(f_header.header_len);
         let packet_de = MqttPacket::decode(f_header, &mut buf).expect("Could not decode packet");
 
         assert_eq!(packet.payload.first().expect("No payload present"), &117);
@@ -349,7 +347,6 @@ mod packet {
         let mut buf = packet.encode().unwrap();
 
         let f_header = FixedHeader::decode(&mut buf).unwrap();
-        buf.advance(f_header.header_len);
         let packet_de = MqttPacket::decode(f_header, &mut buf).expect("Could not decode packet");
 
         assert_eq!(packet_de, MqttPacket::Publish(packet));

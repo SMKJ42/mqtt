@@ -7,10 +7,10 @@ use crate::err::{DecodeError, DecodeErrorKind, EncodeError, EncodeErrorKind};
  * most 4 bytes.
  */
 
-const MAX_LEN: usize = (128 as u64).pow(4) as usize - 1;
+pub const MAX_ENCODED_PACKET_LEN: usize = (128 as u64).pow(4) as usize - 1;
 
 pub fn encode_packet_length(bytes: &mut BytesMut, mut len: usize) -> Result<usize, EncodeError> {
-    if len > MAX_LEN {
+    if len > MAX_ENCODED_PACKET_LEN {
         return Err(EncodeError::new(
             EncodeErrorKind::OversizedPayload,
             format!(
@@ -108,7 +108,7 @@ mod header_length {
     use bytes::{Bytes, BytesMut};
 
     use crate::{
-        io::{encode_packet_length, MAX_LEN},
+        io::{encode_packet_length, MAX_ENCODED_PACKET_LEN},
         v3::FixedHeader,
     };
 
@@ -116,50 +116,48 @@ mod header_length {
     fn encode_length() {
         let buf: &[u8] = &[0, 0, 0, 0];
         let mut bytes = BytesMut::from(buf);
-        let len = MAX_LEN;
+        let len = MAX_ENCODED_PACKET_LEN;
         let size = encode_packet_length(&mut bytes.clone(), len);
 
         assert!(size.is_ok());
         assert_eq!(size.unwrap(), 4);
 
-        let len = MAX_LEN as usize + 1;
+        let len = MAX_ENCODED_PACKET_LEN as usize + 1;
         let size = encode_packet_length(&mut bytes, len);
 
         assert!(size.is_err())
     }
 
     #[test]
-    fn decode_length_max() {
-        let buf: &[u8] = &[0, 255, 255, 255, 127];
+    fn decode_length() {
+        let buf: &[u8] = &[255, 255, 255, 127];
         let mut_bytes = BytesMut::from(buf);
-        let bytes = Bytes::from(mut_bytes);
+        let mut bytes = Bytes::from(mut_bytes);
 
         let (encode_len, rest_len) =
-            FixedHeader::decode_length(&bytes).expect("Error decoding valid length");
+            FixedHeader::decode_length(&mut bytes).expect("Error decoding valid length");
 
-        assert_eq!(encode_len, 5);
-        assert_eq!(rest_len, (128 as usize).pow(4) - 1);
+        assert_eq!(encode_len, 4);
+        assert_eq!(rest_len, MAX_ENCODED_PACKET_LEN);
     }
-
     #[test]
     fn check_max_len_err() {
-        let buf: &[u8] = &[0, 128, 128, 128, 128];
-        let bytes = Bytes::from(buf);
+        let buf: &[u8] = &[255, 255, 255, 128];
+        let mut bytes = Bytes::from(buf);
 
-        let out = FixedHeader::decode_length(&bytes);
-
+        let out = FixedHeader::decode_length(&mut bytes);
         assert!(out.is_err());
     }
 
     #[test]
     fn check_does_not_peek() {
-        let buf: &[u8] = &[0, 127, 128, 128];
-        let bytes = Bytes::from(buf);
+        let buf: &[u8] = &[127, 128, 128];
+        let mut bytes = Bytes::from(buf);
 
         let (encode_len, rest_len) =
-            FixedHeader::decode_length(&bytes).expect("Error decoding valid length");
+            FixedHeader::decode_length(&mut bytes).expect("Error decoding valid length");
 
-        assert_eq!(encode_len, 2);
+        assert_eq!(encode_len, 1);
         assert_eq!(rest_len, 127);
     }
 }

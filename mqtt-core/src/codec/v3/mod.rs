@@ -31,7 +31,10 @@ pub use subscribe::SubscribePacket;
 pub use unsuback::UnsubAckPacket;
 pub use unsubscribe::UnsubscribePacket;
 
-use crate::err::{DecodeError, DecodeErrorKind, EncodeError};
+use crate::{
+    err::{DecodeError, DecodeErrorKind, EncodeError},
+    io::MAX_ENCODED_PACKET_LEN,
+};
 
 use super::{Decode, Encode};
 
@@ -125,8 +128,7 @@ impl FixedHeader {
         let type_byte = bytes.get_u8();
         let type_ = PacketType::try_from(type_byte)?;
         let flags = HeaderFlags::try_from((type_, type_byte))?;
-        let (len_len, rest_len) = Self::decode_length(&bytes)?;
-        bytes.advance(len_len);
+        let (len_len, rest_len) = Self::decode_length(bytes)?;
 
         return Ok(Self {
             type_,
@@ -146,23 +148,26 @@ impl FixedHeader {
     /// Will NOT advance the internal buffer. To keep alignment with the buffer,
     /// the user is responsible for advancing the buffer's pointer.
     ///
-    /// ## Returns (fixed_header_len, rest_len)
-    pub fn decode_length(bytes: &[u8]) -> Result<(usize, usize), DecodeError> {
+    /// ## Returns (length_of_encoded_length, rest_len)
+    pub fn decode_length(bytes: &mut Bytes) -> Result<(usize, usize), DecodeError> {
         let mut mult = 1;
         let mut len: usize = 0;
         let mut i = 0;
+        let mut last = &0;
 
         for c in bytes.iter().take(4) {
             len += (*c as usize & 127) * mult; // Add the 7 least significant bits of c to value
             mult *= 128;
             i += 1;
+            last = c;
             // check most significant bit (0b1000_0000) for a set flag, if set to zero - break loop, else continue.
+
             if (c & 128) == 0 {
                 break;
             };
         }
 
-        if len > 127 ^ 4 {
+        if len > MAX_ENCODED_PACKET_LEN || *last > 127 {
             return Err(DecodeError::new(
                 DecodeErrorKind::MalformedLength,
                 format!(
@@ -171,6 +176,8 @@ impl FixedHeader {
                 ),
             ));
         };
+
+        bytes.advance(i);
 
         return Ok((i, len));
     }

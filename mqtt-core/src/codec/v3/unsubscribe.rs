@@ -78,7 +78,6 @@ mod packet {
         v3::{FixedHeader, MqttPacket},
         Decode,
     };
-    use bytes::Buf;
 
     #[test]
     fn serialize_deserialize() {
@@ -86,7 +85,6 @@ mod packet {
         let mut buf = packet.encode().unwrap();
 
         let f_header = FixedHeader::decode(&mut buf).unwrap();
-        buf.advance(f_header.header_len);
         let packet_de = MqttPacket::decode(f_header, &mut buf).expect("Could not decode packet");
 
         assert_eq!(packet_de, MqttPacket::Unsubscribe(packet));
