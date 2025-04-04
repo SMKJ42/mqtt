@@ -62,6 +62,7 @@ pub enum DecodeErrorKind {
     ImproperDisconnect,
     ProtocolError,
     Timeout,
+    StreamRead,
 }
 
 pub mod client {

@@ -106,7 +106,6 @@ impl ConnAckPacket {
 
 #[cfg(test)]
 mod packet {
-
     use crate::{
         v3::{FixedHeader, MqttPacket},
         Decode,

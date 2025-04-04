@@ -202,25 +202,34 @@ pub async fn cancel_safe<S: AsyncBufRead + Unpin, E: From<err::DecodeError>>(
 ) -> Result<(Option<MqttPacket>, usize), E> {
     // let mut pin_stream = Pin::new(stream);
     // let mut pin_stream = Pin::new(stream);
-    let n = stream.fill_buf().await.unwrap(); // TODO: unwrap...
+    let n = stream
+        .fill_buf()
+        .await
+        .map_err(|e| DecodeError::new(DecodeErrorKind::StreamRead, e.to_string()))?; // TODO: unwrap...
 
+    // if there are no bytes to read, return none and consume no bytes.
     if n.len() == 0 {
         return Ok((None, 0));
     }
 
-    let (packet, size) = decode_any(Bytes::from(n.to_owned())).await?;
-
-    return Ok((Some(packet), size));
+    return decode_any(Bytes::from(n.to_owned())).await;
 }
 
 pub async fn decode_any<E: From<err::DecodeError>>(
     mut bytes: Bytes,
-) -> Result<(MqttPacket, usize), E> {
+) -> Result<(Option<MqttPacket>, usize), E> {
     let f_header = FixedHeader::decode(&mut bytes)?;
+
+    // if the stream is still waiting for more bytes, return none and consume no bytes.
+    if bytes.remaining() < f_header.rest_len() {
+        return Ok((None, 0));
+    }
+
     let _ = bytes.split_off(f_header.rest_len());
+
     match decode_mqtt_packet(f_header, &mut bytes) {
         Ok(packet) => {
-            return Ok((packet, f_header.rest_len() + f_header.header_len()));
+            return Ok((Some(packet), f_header.rest_len() + f_header.header_len()));
         }
         Err(err) => {
             return Err(err.into());
