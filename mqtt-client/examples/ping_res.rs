@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use mqtt_client::r#async::AsyncClient;
-use mqtt_core::v3::{ConnectPacket, MqttPacket};
+use mqtt_core::v4::{ConnectPacket, MqttPacket};
 use tokio::{
     net::TcpStream,
     time::{sleep, Instant},

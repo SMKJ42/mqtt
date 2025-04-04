@@ -3,7 +3,7 @@ use mqtt_core::{
     err::client::{self, ClientError},
     id::{IdGenType, IdGenerator},
     io::read_packet_with_timeout,
-    v3::{
+    v4::{
         ConnectPacket, DisconnectPacket, MqttPacket, PingReqPacket, PubAckPacket, PubCompPacket,
         PubRecPacket, PubRelPacket, PublishPacket, SubscribePacket, UnsubscribePacket,
     },

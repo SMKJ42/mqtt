@@ -1,6 +1,6 @@
 use crate::{
     err::{DecodeError, DecodeErrorKind},
-    v3::PacketType,
+    v4::PacketType,
     ConnectReturnCode,
 };
 use bytes::{Buf, BufMut, Bytes, BytesMut};
@@ -107,7 +107,7 @@ impl ConnAckPacket {
 #[cfg(test)]
 mod packet {
     use crate::{
-        v3::{FixedHeader, MqttPacket},
+        v4::{FixedHeader, MqttPacket},
         Decode,
     };
 

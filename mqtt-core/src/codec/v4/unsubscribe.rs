@@ -2,7 +2,7 @@ use crate::{
     err::{DecodeError, EncodeError},
     io::{encode_packet_length, encode_utf8},
     topic::TopicFilter,
-    v3::PacketType,
+    v4::PacketType,
 };
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 
@@ -75,7 +75,7 @@ mod packet {
     use super::UnsubscribePacket;
     use crate::{
         topic::TopicFilter,
-        v3::{FixedHeader, MqttPacket},
+        v4::{FixedHeader, MqttPacket},
         Decode,
     };
 

@@ -77,7 +77,7 @@ mod packet {
     use super::SubAckPacket;
     use crate::{
         qos::{QosLevel, SubAckQoS},
-        v3::{FixedHeader, MqttPacket},
+        v4::{FixedHeader, MqttPacket},
         Decode,
     };
 

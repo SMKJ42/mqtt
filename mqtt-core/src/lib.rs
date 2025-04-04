@@ -11,6 +11,11 @@ pub mod qos;
 pub mod topic;
 pub use codec::*;
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum MqttVersion {
+    V4 = 4,
+}
+
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ConnectReturnCode {

@@ -2,7 +2,7 @@ use mqtt_core::{
     err::server::ServerError,
     qos::QosLevel,
     topic::{TopicName, TopicSubscription},
-    v3::PublishPacket,
+    v4::PublishPacket,
     Encode,
 };
 use std::{

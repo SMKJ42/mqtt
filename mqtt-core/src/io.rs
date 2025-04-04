@@ -109,7 +109,7 @@ mod header_length {
 
     use crate::{
         io::{encode_packet_length, MAX_ENCODED_PACKET_LEN},
-        v3::FixedHeader,
+        v4::FixedHeader,
     };
 
     #[test]
@@ -171,7 +171,7 @@ use tokio::{
 
 use crate::{
     err,
-    v3::{decode_mqtt_packet, FixedHeader, MqttPacket},
+    v4::{decode_mqtt_packet, FixedHeader, MqttPacket},
 };
 
 pub async fn read_packet_with_timeout<

@@ -1,10 +1,10 @@
 use crate::err::{DecodeError, DecodeErrorKind, EncodeError};
-use crate::v3::PacketType;
 use crate::{
     io::{decode_bytes, decode_utf8, encode_bytes, encode_packet_length, encode_utf8},
     qos::QosLevel,
     topic::TopicName,
 };
+use crate::{v4::PacketType, MqttVersion};
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use core::fmt::Debug;
 
@@ -30,10 +30,7 @@ pub struct ConnectPacket {
      * If the protocol name is incorrect the Server MAY disconnect the Client, or it MAY continue processing
      * the CONNECT packet in accordance with some other specification. In the latter case, the Server MUST NOT
      * continue to process the CONNECT packet in line with this specification [MQTT-3.1.2-1].
-     */
-    protocol: Protocol,
-
-    /*
+     *
      * The 8 bit unsigned value that represents the revision level of the protocol used by the Client.
      *
      * The value of the Protocol Level field for the version 3.1.1 of the protocol is 4 (0x04).
@@ -41,7 +38,7 @@ pub struct ConnectPacket {
      * The Server MUST respond to the CONNECT Packet with a CONNACK return code 0x01 (unacceptable protocol level)
      * and then disconnect the Client if the Protocol Level is not supported by the Server [MQTT-3.1.2-2].
      */
-    level: u8,
+    version: MqttVersion,
 
     /*
      * The Connect Flags byte contains a number of parameters specifying the behavior of the MQTT connection.
@@ -221,17 +218,24 @@ pub struct ConnectPacket {
 impl ConnectPacket {
     pub fn decode(mut bytes: &mut Bytes) -> Result<Self, DecodeError> {
         // first byte is used to obtain the packet type.
+
+        // TODO: TECH DEBT. This needs to be abstraced to be preparsed.
         let protocol: Protocol;
         (protocol, bytes) = Protocol::from_bytes(bytes)?;
 
         let level = bytes.get_u8();
 
-        if level != 4 {
-            return Err(DecodeError::new(
-                DecodeErrorKind::InvalidProtocol,
-                format!("Mqtt V3.1.1 Requires Protocol level to be 4, instead received: {level}"),
-            ));
-        }
+        let version = match level {
+            4 => MqttVersion::V4,
+            _ => {
+                return Err(DecodeError::new(
+                    DecodeErrorKind::InvalidProtocol,
+                    format!(
+                        "Mqtt V3.1.1 Requires Protocol level to be 4, instead received: {level}"
+                    ),
+                ))
+            }
+        };
 
         let conn_flags = ConnectFlags::from_byte(bytes.get_u8())?;
 
@@ -282,8 +286,7 @@ impl ConnectPacket {
         }
 
         return Ok(Self {
-            protocol,
-            level,
+            version,
             conn_flags,
             keep_alive,
             client_id,
@@ -296,8 +299,8 @@ impl ConnectPacket {
     pub fn encode(&self) -> Result<Bytes, EncodeError> {
         // 2 for fixed header, 1 for protocol level, 1 for connect flags, two for the keep alive.
         let mut len = 1 + 1 + 2;
-        // utf-8 decode is prefixed by two bytes to denote string length.
-        len += 2 + self.protocol.len();
+        // utf-8 decode is prefixed by two bytes to denote string "MQTT"s length.
+        len += 6;
 
         len += 2 + self.client_id.len();
 
@@ -320,9 +323,9 @@ impl ConnectPacket {
 
         encode_packet_length(&mut bytes, len)?;
 
-        encode_utf8(&mut bytes, self.protocol.as_str())?;
+        encode_utf8(&mut bytes, "MQTT")?;
 
-        bytes.put_u8(self.level);
+        bytes.put_u8(self.version as u8);
 
         bytes.put_u8(self.conn_flags.as_byte());
 
@@ -378,8 +381,7 @@ impl ConnectPacket {
         }
 
         return Self {
-            protocol: Protocol::MQTT,
-            level: 4,
+            version: MqttVersion::V4,
             conn_flags,
             keep_alive,
             client_id,
@@ -387,6 +389,10 @@ impl ConnectPacket {
             username,
             password,
         };
+    }
+
+    pub fn version(&self) -> MqttVersion {
+        return self.version;
     }
 
     pub fn client_id(&self) -> &'_ str {
@@ -692,7 +698,7 @@ impl Protocol {
 mod packet {
 
     use crate::{
-        v3::{FixedHeader, MqttPacket},
+        v4::{FixedHeader, MqttPacket},
         Decode,
     };
 

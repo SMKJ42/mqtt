@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
 use bytes::Bytes;
-use v3::FixedHeader;
+use v4::FixedHeader;
 
 use crate::err::EncodeError;
 
-pub mod v3;
+pub mod v4;
 
 pub trait Encode {
     fn encode(&self) -> Result<Bytes, EncodeError>;

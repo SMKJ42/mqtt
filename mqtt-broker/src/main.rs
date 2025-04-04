@@ -17,7 +17,7 @@ use mqtt_core::{
     io::read_packet_with_timeout,
     qos::{QosLevel, SubAckQoS},
     topic::{TopicFilterResult, TopicName},
-    v3::{
+    v4::{
         ConnAckPacket, ConnectPacket, MqttPacket, PingRespPacket, PubAckPacket, PubCompPacket,
         PublishPacket, SubAckPacket, UnsubAckPacket,
     },
@@ -321,7 +321,7 @@ async fn handle_connect_packet<S: AsyncWriteExt + AsyncReadExt + Unpin>(
     if let Some(dc_session) = sessions.remove_session(packet.client_id()) {
         if packet.clean_session() {
             // The client requested a new session, drop the old session history and continue.
-            session = ActiveSession::new(packet, user);
+            session = ActiveSession::new_tcp(packet, user);
         } else {
             // The client requested to resume from a client's prior history.
             connack.set_session_present(true);
@@ -329,7 +329,7 @@ async fn handle_connect_packet<S: AsyncWriteExt + AsyncReadExt + Unpin>(
         }
     } else {
         // The server does not have any session history.
-        session = ActiveSession::new(packet, user);
+        session = ActiveSession::new_tcp(packet, user);
     }
 
     stream.write_all(&connack.encode()).await?;

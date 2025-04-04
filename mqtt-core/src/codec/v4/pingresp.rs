@@ -1,6 +1,6 @@
 use crate::{
     err::{DecodeError, DecodeErrorKind},
-    v3::{FixedHeader, PacketType},
+    v4::{FixedHeader, PacketType},
 };
 
 use bytes::{BufMut, Bytes, BytesMut};
@@ -42,7 +42,7 @@ impl PingRespPacket {
 mod packet {
     use super::PingRespPacket;
     use crate::{
-        v3::{FixedHeader, MqttPacket},
+        v4::{FixedHeader, MqttPacket},
         Decode,
     };
 

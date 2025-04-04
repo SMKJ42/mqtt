@@ -7,13 +7,14 @@ use mqtt_client::r#async::AsyncClient;
 use mqtt_core::{
     qos::QosLevel,
     topic::{TopicFilter, TopicSubscription},
-    v3::{ConnectPacket, MqttPacket, PublishPacket, SubscribePacket},
+    v4::{ConnectPacket, MqttPacket, PublishPacket, SubscribePacket},
 };
-use tokio::net::TcpStream;
+use tokio::net::{TcpSocket, TcpStream};
 
 #[tokio::main]
 async fn main() {
     let args: Vec<String> = env::args().collect();
+
     let stream = TcpStream::connect("127.0.0.1:1883").await.unwrap();
     let mut client = AsyncClient::new(stream);
 

@@ -6,7 +6,7 @@ use tokio_rustls::{
 };
 
 use mqtt_client::r#async::AsyncClient;
-use mqtt_core::v3::{ConnectPacket, MqttPacket};
+use mqtt_core::v4::{ConnectPacket, MqttPacket};
 use tokio::{net::TcpStream, time::Instant};
 use tokio_rustls::rustls::{self, pki_types::CertificateDer};
 

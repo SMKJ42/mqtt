@@ -3,7 +3,7 @@ use crate::{
     io::{encode_packet_length, encode_utf8},
     qos::QosLevel,
     topic::{TopicFilter, TopicFilterResult, TopicSubscription},
-    v3::PacketType,
+    v4::PacketType,
 };
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 
@@ -127,7 +127,7 @@ mod packet {
     use crate::{
         qos::QosLevel,
         topic::{TopicFilter, TopicSubscription},
-        v3::{FixedHeader, MqttPacket},
+        v4::{FixedHeader, MqttPacket},
         Decode,
     };
 

@@ -2,7 +2,7 @@ use bytes::{Buf, BufMut, Bytes, BytesMut};
 
 use crate::{
     err::{DecodeError, DecodeErrorKind},
-    v3::{FixedHeader, PacketType},
+    v4::{FixedHeader, PacketType},
 };
 
 /*
@@ -48,7 +48,7 @@ impl UnsubAckPacket {
 mod packet {
     use super::UnsubAckPacket;
     use crate::{
-        v3::{FixedHeader, MqttPacket},
+        v4::{FixedHeader, MqttPacket},
         Decode,
     };
 

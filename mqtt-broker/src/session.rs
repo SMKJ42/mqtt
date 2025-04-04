@@ -2,13 +2,14 @@ use bytes::{BufMut, BytesMut};
 
 use mqtt_core::err::server::{self, ServerError};
 use mqtt_core::id::{IdGenType, IdGenerator};
-use mqtt_core::msg_assurance::{AtLeastOnceList, ExactlyOnceList, RetryDuration};
+use mqtt_core::msg_assurance::sender::{AtLeastOnceList, ExactlyOnceList};
+use mqtt_core::msg_assurance::RetryDuration;
 use mqtt_core::qos::QosLevel;
 use mqtt_core::topic::TopicFilter;
-use mqtt_core::v3::{
+use mqtt_core::v4::{
     ConnectPacket, MqttPacket, PubAckPacket, PubRecPacket, PubRelPacket, PublishPacket, Will,
 };
-use mqtt_core::{ConnectReturnCode, Encode};
+use mqtt_core::{ConnectReturnCode, Encode, MqttVersion};
 
 use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
@@ -30,6 +31,8 @@ pub type ExactlyOnceListType = ExactlyOnceList<Arc<PublishPacket>, Instant, Retr
 pub struct ActiveSession {
     client_id: String,
     auth_session: Option<AuthSession>,
+    conn_t: ConnectionType,
+    protocol: Protocol,
     will: Option<Will>,
     keep_alive: u64,
     last_read: Instant,
@@ -40,10 +43,12 @@ pub struct ActiveSession {
 }
 
 impl ActiveSession {
-    pub fn new(packet: ConnectPacket, auth_session: Option<AuthSession>) -> Self {
+    pub fn new_tcp(packet: ConnectPacket, auth_session: Option<AuthSession>) -> Self {
         return Self {
             client_id: packet.client_id().to_string(),
             auth_session,
+            conn_t: ConnectionType::Tcp,
+            protocol: Protocol::Mqtt(packet.version()),
             will: packet.will,
             keep_alive: packet.keep_alive.into(),
             last_read: Instant::now(),
@@ -186,6 +191,8 @@ impl TryFrom<(DisconnectedSession, ConnectPacket)> for ActiveSession {
         return Ok(Self {
             client_id: packet.client_id.to_owned(),
             auth_session: dc_session.auth_session,
+            protocol: dc_session.protocol,
+            conn_t: dc_session.conn_t,
             will: packet.will.to_owned(),
             keep_alive: packet.keep_alive.into(),
             last_read: Instant::now(),
@@ -202,6 +209,8 @@ impl From<ActiveSession> for DisconnectedSession {
         Self {
             client_id: value.client_id,
             auth_session: value.auth_session,
+            conn_t: value.conn_t,
+            protocol: value.protocol,
             keep_alive: value.keep_alive,
             last_read: value.last_read,
             qos1_packets: value.qos1_packets,
@@ -217,6 +226,8 @@ impl From<ActiveSession> for DisconnectedSession {
 pub struct DisconnectedSession {
     client_id: String,
     auth_session: Option<AuthSession>,
+    protocol: Protocol,
+    conn_t: ConnectionType,
     keep_alive: u64,
     last_read: Instant,
     qos1_packets: AtLeastOnceListType,
@@ -296,6 +307,16 @@ impl DisconnectedSessions {
     pub fn remove_session(&mut self, id: &str) -> Option<DisconnectedSession> {
         return self.dc_sessions.remove(id);
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum ConnectionType {
+    Tcp,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Protocol {
+    Mqtt(MqttVersion),
 }
 
 /*

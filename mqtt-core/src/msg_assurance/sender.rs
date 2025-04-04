@@ -1,17 +1,15 @@
-// end state is PUBACK, but we do not need to maintain that state, only send the packet
-
 use crate::{
-    v3::{MqttPacket, PubRecPacket, PubRelPacket, PublishPacket},
+    v4::{MqttPacket, PubRecPacket, PubRelPacket, PublishPacket},
     Encode,
 };
 
-use core::time::Duration;
 use std::slice::{Iter, IterMut};
 use std::sync::Arc;
 
 #[derive(Clone, Debug)]
-/// Function names denote the state the packet is received in,
-/// starting with 'origin' for a new packet to be sent, then publish for a newly received packet with no release.
+/// # Use
+/// Method names denote the state the packet is received in,
+/// starting with 'origin' for a new packet to be sent.
 pub struct ExactlyOnceList<P, I, B>
 where
     P: Encode,
@@ -90,20 +88,6 @@ where
     }
 }
 
-#[derive(Clone, Debug, PartialEq, PartialOrd, Eq, Ord)]
-pub struct ExactlyOncePacket<P, I, B>
-where
-    P: Encode,
-    I: Instant,
-    B: ExponentialBackoff,
-{
-    packet: P,
-    new_id: u16,
-    stage: QoS2Stage,
-    last_received: I,
-    retry_duration: B,
-}
-
 //// Tracks sent and received packets that have not reached the end of their lifetime.
 impl<P, I, B> ExactlyOnceList<P, I, B>
 where
@@ -159,6 +143,23 @@ where
     }
 }
 
+#[derive(Clone, Debug, PartialEq, PartialOrd, Eq, Ord)]
+pub struct ExactlyOncePacket<P, I, B>
+where
+    P: Encode,
+    I: Instant,
+    B: ExponentialBackoff,
+{
+    packet: P,
+    new_id: u16,
+    stage: QoS2Stage,
+    last_received: I,
+    retry_duration: B,
+}
+
+/// ## Important
+///
+/// When utilizing TCP, or another protocol that handles retries automatically, this struct's retry mechanisms do not need to be utilized
 impl<I, B> ExactlyOncePacket<Arc<PublishPacket>, I, B>
 where
     I: Instant,
@@ -183,6 +184,16 @@ where
         return self.new_id;
     }
 
+    /// Updates the persisted packet to indicate to the device that the PUBREL packet has been received
+    pub fn relay(&mut self) -> Option<Arc<PublishPacket>> {
+        if self.stage != QoS2Stage::Publish {
+            return None;
+        }
+        self.last_received = I::now();
+        self.stage = QoS2Stage::Rel;
+        return Some(self.inner().clone());
+    }
+
     /// Obtains the correct packet for the current state of a packet transmission.
     pub fn get_retry_packet(&self) -> Option<MqttPacket> {
         let out: MqttPacket;
@@ -202,16 +213,6 @@ where
         };
 
         return Some(out);
-    }
-
-    /// Updates the persisted packet to indicate to the device that the PUBREL packet has been received
-    pub fn relay(&mut self) -> Option<Arc<PublishPacket>> {
-        if self.stage != QoS2Stage::Publish {
-            return None;
-        }
-        self.last_received = I::now();
-        self.stage = QoS2Stage::Rel;
-        return Some(self.inner().clone());
     }
 
     /// Returns the PUBLISH packet associate with the exactly once message.
@@ -297,10 +298,8 @@ pub enum QoS2Stage {
     Comp,
 }
 
-/// Note that the functionality of the AtLeastOnceList is slightly different from the client crate.
-///
-/// The client crate handles the ACTION of sending packets,
-/// while this struct handles the STATE of the last packet received in a chain of packets.
+use super::{ExponentialBackoff, Instant, QoS1Stage};
+// while this struct handles the STATE of the last packet received in a chain of packets.
 ///
 /// When choosing a function from this struct to use, choose the function with the name of the last known STATE
 /// of the packet. For instance if you are sending a packet, the last known state is origin, while when receiving a publish packet
@@ -412,6 +411,12 @@ where
     retry_duration: B,
 }
 
+///
+/// ## Note
+/// The functionality of the AtLeastOnceList is slightly different from the client crate.
+///
+/// The client crate handles the ACTION of sending packets,
+/// end state is PUBACK, but we do not need to maintain that state, only send the packet
 impl<P, I, B> AtLeastOncePacket<P, I, B>
 where
     P: Encode,
@@ -494,96 +499,4 @@ where
     pub fn inner(&self) -> &Arc<PublishPacket> {
         return &self.packet;
     }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum QoS1Stage {
-    Origin,
-    Publish,
-    Ack,
-}
-
-impl Instant for std::time::Instant {
-    fn duration_since(&self, instant: &std::time::Instant) -> std::time::Duration {
-        return self.duration_since(*instant);
-    }
-    fn now() -> Self {
-        return std::time::Instant::now();
-    }
-}
-
-#[derive(Debug, Clone, Ord, PartialEq, Eq, PartialOrd)]
-pub struct RetryDuration {
-    dur: core::time::Duration,
-}
-
-impl Default for RetryDuration {
-    fn default() -> Self {
-        return Self {
-            dur: Duration::from_millis(200),
-        };
-    }
-}
-
-impl ExponentialBackoff for RetryDuration {
-    fn exponential(&self) -> core::time::Duration {
-        return *self.dur.checked_mul(2).get_or_insert(Duration::MAX);
-    }
-
-    fn inner(&self) -> core::time::Duration {
-        return self.dur;
-    }
-
-    fn set_duration(&mut self, dur: Duration) {
-        self.dur = dur;
-    }
-}
-
-pub trait Instant: Ord {
-    fn now() -> Self;
-    fn duration_since(&self, instant: &Self) -> core::time::Duration;
-}
-
-/// ## Examples
-///
-/// ```
-/// use mqtt_core::msg_assurance::ExponentialBackoff;
-/// use core::time::Duration;
-///
-/// #[derive(PartialEq, Eq, PartialOrd, Ord)]
-/// pub struct MyDuration {
-///     dur: Duration,
-/// }
-///
-/// impl Default for MyDuration {
-///     fn default() -> Self {
-///         return Self {
-///             dur: Duration::from_millis(100),
-///         };
-///     }
-/// }
-///
-/// impl ExponentialBackoff for MyDuration {
-///     fn exponential(&self) -> core::time::Duration {
-///         return *self.dur.checked_mul(2).get_or_insert(Duration::MAX);
-///     }
-///
-///     fn inner(&self) -> core::time::Duration {
-///         return self.dur;
-///         }
-///
-///     fn set_duration(&mut self, dur: Duration) {
-///         self.dur = dur;
-///     }
-/// }
-/// ```
-pub trait ExponentialBackoff: Ord + Default {
-    /// Returns a new duration with the exponential backoff function applied.
-    /// Returns None if an overflow occured.
-    fn exponential(&self) -> core::time::Duration;
-
-    /// Function that receives the inner Duration value.
-    fn inner(&self) -> core::time::Duration;
-
-    fn set_duration(&mut self, dur: Duration);
 }

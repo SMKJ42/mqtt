@@ -3,7 +3,7 @@ use std::sync::Arc;
 use mqtt_core::{
     qos::QosLevel,
     topic::{TopicFilter, TopicName},
-    v3::PublishPacket,
+    v4::PublishPacket,
 };
 use tokio::sync::broadcast::{error::TryRecvError, Receiver};
 
