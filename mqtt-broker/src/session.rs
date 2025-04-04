@@ -71,6 +71,13 @@ impl ActiveSession {
         return self.last_read.elapsed().as_secs() > self.keep_alive;
     }
 
+    /// Returns true if the connection type is a stateless connection where packet retries are not handled by the internal protocol
+    pub fn should_retry_packets(&self) -> bool {
+        match self.conn_t {
+            ConnectionType::Tcp => false,
+        }
+    }
+
     pub async fn retry_packets<S: AsyncWrite + Unpin>(
         &mut self,
         stream: &mut S,

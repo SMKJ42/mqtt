@@ -18,3 +18,7 @@ If you're crazy enough to want to help out, just submit a pull request. Here are
     [X] TLS connections.
     [] mTLS connections.
     [X] Server configuration file.
+
+### Debug
+
+    [] Hanging -- I think on TCP stream read buffer fill -- packets get put into unreadable state where the client / broker does not read fast enough...

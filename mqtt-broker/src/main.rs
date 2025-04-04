@@ -490,8 +490,13 @@ async fn handle_session<S: AsyncRead + AsyncWrite + Unpin>(
         }
 
         session.clean_session();
+        // TODO: TECH DEBT -- this is handled inside the event loop. Improve modularity to allow for handling of the conditional higher up in the call stack
+        // ideally, on the connection initialization.
+
         // RETRY already sent packets that have not received a response after the timeout period.
-        session.retry_packets(stream).await?;
+        if session.should_retry_packets() {
+            session.retry_packets(stream).await?;
+        }
     }
 }
 
