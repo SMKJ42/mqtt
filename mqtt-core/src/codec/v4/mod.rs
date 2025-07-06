@@ -50,8 +50,6 @@ where
     S: AsyncBufRead + Unpin,
     E: From<err::DecodeError>,
 {
-    // let mut pin_stream = Pin::new(stream);
-    // let mut pin_stream = Pin::new(stream);
     let n: &[u8] = stream
         .fill_buf()
         .await

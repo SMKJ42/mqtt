@@ -1,18 +1,6 @@
-use tokio::time::Duration;
-
 use bytes::{Buf, BufMut, Bytes, BytesMut};
-use futures::FutureExt;
-use tokio::{
-    io::{AsyncBufRead, AsyncBufReadExt},
-    time::sleep,
-};
 
 use crate::err::{DecodeError, DecodeErrorKind, EncodeError, EncodeErrorKind};
-use crate::{
-    err,
-    v4::{decode_mqtt_packet, MqttPacket},
-};
-
 /*
  * MQTT v3.1.1 standard, Remaining length field on the fixed header can be at
  * most 4 bytes.
@@ -118,10 +106,9 @@ pub fn decode_u16_len(bytes: &mut Bytes) -> Result<u16, DecodeError> {
 mod header_length {
     use bytes::{Bytes, BytesMut};
 
-    use crate::{
-        io::{encode_packet_length, MAX_ENCODED_PACKET_LEN},
-        v4::FixedHeader,
-    };
+    use crate::v4::FixedHeader;
+
+    use super::{encode_packet_length, MAX_ENCODED_PACKET_LEN};
 
     #[test]
     fn encode_length() {
@@ -170,37 +157,5 @@ mod header_length {
 
         assert_eq!(encode_len, 1);
         assert_eq!(rest_len, 127);
-    }
-}
-
-pub async fn read_packet_with_timeout<S, E>(
-    stream: &mut S,
-    timeout_us: u64,
-) -> Result<Option<MqttPacket>, E>
-where
-    S: AsyncBufRead + Unpin,
-    E: From<err::DecodeError>,
-{
-    futures::select! {
-        _ = sleep(Duration::from_micros(timeout_us)).fuse() => {
-            return Ok(None);
-        }
-        packet = read_packet::<S, E>(stream).fuse() => {
-            return packet
-        }
-    }
-}
-
-pub async fn read_packet<S, E>(stream: &mut S) -> Result<Option<MqttPacket>, E>
-where
-    S: AsyncBufRead + Unpin,
-    E: From<err::DecodeError>,
-{
-    let packet_tuple = decode_mqtt_packet::<S, E>(stream).await?;
-    if let Some((f_header, packet)) = packet_tuple {
-        stream.consume(f_header.header_len() + f_header.rest_len());
-        return Ok(Some(packet));
-    } else {
-        return Ok(None);
     }
 }
