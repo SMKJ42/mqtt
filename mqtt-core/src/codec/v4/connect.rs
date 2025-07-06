@@ -218,10 +218,7 @@ pub struct ConnectPacket {
 impl ConnectPacket {
     pub fn decode(mut bytes: &mut Bytes) -> Result<Self, DecodeError> {
         // first byte is used to obtain the packet type.
-
-        // TODO: TECH DEBT. This needs to be abstraced to be preparsed.
-        let protocol: Protocol;
-        (protocol, bytes) = Protocol::from_bytes(bytes)?;
+        (_, bytes) = Protocol::from_bytes(bytes)?;
 
         let level = bytes.get_u8();
 
@@ -680,17 +677,6 @@ impl Protocol {
                 ))
             }
         }
-    }
-
-    pub fn as_str(&self) -> &str {
-        match self {
-            Self::MQTT => return "MQTT",
-        }
-    }
-
-    /// returns the number of bytes, not the number of chars.
-    pub fn len(&self) -> usize {
-        return self.as_str().len();
     }
 }
 

@@ -3,14 +3,14 @@ use tokio::time::Duration;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use futures::FutureExt;
 use tokio::{
-    io::{self, AsyncBufRead, AsyncBufReadExt},
+    io::{AsyncBufRead, AsyncBufReadExt},
     time::sleep,
 };
 
 use crate::err::{DecodeError, DecodeErrorKind, EncodeError, EncodeErrorKind};
 use crate::{
     err,
-    v4::{decode_mqtt_packet, FixedHeader, MqttPacket},
+    v4::{decode_mqtt_packet, MqttPacket},
 };
 
 /*
