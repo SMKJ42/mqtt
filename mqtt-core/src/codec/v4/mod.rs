@@ -70,19 +70,19 @@ impl MqttPacket {
     pub fn encode(&self) -> Result<Bytes, EncodeError> {
         return match self {
             Self::ConnAck(packet) => Ok(packet.encode()),
-            Self::Connect(packet) => packet.encode(),
             Self::Disconnect(packet) => Ok(packet.encode()),
             Self::PingReq(packet) => Ok(packet.encode()),
             Self::PingResp(packet) => Ok(packet.encode()),
             Self::PubAck(packet) => Ok(packet.encode()),
             Self::PubComp(packet) => Ok(packet.encode()),
-            Self::Publish(packet) => packet.encode(),
             Self::PubRel(packet) => Ok(packet.encode()),
             Self::PubRec(packet) => Ok(packet.encode()),
-            Self::SubAck(packet) => packet.encode(),
-            Self::Subscribe(packet) => packet.encode(),
             Self::UnsubAck(packet) => Ok(packet.encode()),
             Self::Unsubscribe(packet) => packet.encode(),
+            Self::Connect(packet) => packet.encode(),
+            Self::Subscribe(packet) => packet.encode(),
+            Self::Publish(packet) => packet.encode(),
+            Self::SubAck(packet) => packet.encode(),
         };
     }
 }
@@ -186,12 +186,16 @@ impl FixedHeader {
         self.flags = flags;
     }
 
-    pub fn header_len(&self) -> usize {
+    pub(crate) fn header_len(&self) -> usize {
         return self.header_len;
     }
 
-    pub fn rest_len(&self) -> usize {
+    pub(crate) fn rest_len(&self) -> usize {
         return self.rest_len;
+    }
+
+    pub fn len(&self) -> usize {
+        return self.header_len() + self.rest_len();
     }
 }
 
@@ -252,41 +256,56 @@ impl TryFrom<(PacketType, u8)> for HeaderFlags {
     }
 }
 
+const CONNECT: u8 = 0b0001_0000;
+const CONNACK: u8 = 0b0010_0000;
+const PUBLISH: u8 = 0b0011_0000;
+const PUBACK: u8 = 0b0100_0000;
+const PUBREC: u8 = 0b0101_0000;
+const PUBREL: u8 = 0b0110_0000;
+const PUBCOMP: u8 = 0b0111_0000;
+const SUBSCRIBE: u8 = 0b1000_0000;
+const SUBACK: u8 = 0b1001_0000;
+const UNSUBSCRIBE: u8 = 0b1010_0000;
+const UNSUBACK: u8 = 0b1011_0000;
+const PINGREQ: u8 = 0b1100_0000;
+const PINGRESP: u8 = 0b1101_0000;
+const DISCONNECT: u8 = 0b1110_0000;
+
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum PacketType {
-    CONNECT = 0b0001_0000,
-    CONNACK = 0b0010_0000,
-    PUBLISH = 0b0011_0000,
-    PUBACK = 0b0100_0000,
-    PUBREC = 0b0101_0000,
-    PUBREL = 0b0110_0000,
-    PUBCOMP = 0b0111_0000,
-    SUBSCRIBE = 0b1000_0000,
-    SUBACK = 0b1001_0000,
-    UNSUBSCRIBE = 0b1010_0000,
-    UNSUBACK = 0b1011_0000,
-    PINGREQ = 0b1100_0000,
-    PINGRESP = 0b1101_0000,
-    DISCONNECT = 0b1110_0000,
+    CONNECT = CONNECT as isize,
+    CONNACK = CONNACK as isize,
+    PUBLISH = PUBLISH as isize,
+    PUBACK = PUBACK as isize,
+    PUBREC = PUBREC as isize,
+    PUBREL = PUBREL as isize,
+    PUBCOMP = PUBCOMP as isize,
+    SUBSCRIBE = SUBSCRIBE as isize,
+    SUBACK = SUBACK as isize,
+    UNSUBSCRIBE = UNSUBSCRIBE as isize,
+    UNSUBACK = UNSUBACK as isize,
+    PINGREQ = PINGREQ as isize,
+    PINGRESP = PINGRESP as isize,
+    DISCONNECT = DISCONNECT as isize,
 }
 
 impl Into<u8> for PacketType {
     fn into(self) -> u8 {
         match self {
-            Self::CONNECT => 0b0001_0000,
-            Self::CONNACK => 0b0010_0000,
-            Self::PUBLISH => 0b0011_0000,
-            Self::PUBACK => 0b0100_0000,
-            Self::PUBREC => 0b0101_0000,
-            Self::PUBREL => 0b0110_0000,
-            Self::PUBCOMP => 0b0111_0000,
-            Self::SUBSCRIBE => 0b1000_0000,
-            Self::SUBACK => 0b1001_0000,
-            Self::UNSUBSCRIBE => 0b1010_0000,
-            Self::UNSUBACK => 0b1011_0000,
-            Self::PINGREQ => 0b1100_0000,
-            Self::PINGRESP => 0b1101_0000,
-            Self::DISCONNECT => 0b1110_0000,
+            Self::CONNECT => CONNECT,
+            Self::CONNACK => CONNACK,
+            Self::PUBLISH => PUBLISH,
+            Self::PUBACK => PUBACK,
+            Self::PUBREC => PUBREC,
+            Self::PUBREL => PUBREL,
+            Self::PUBCOMP => PUBCOMP,
+            Self::SUBSCRIBE => SUBSCRIBE,
+            Self::SUBACK => SUBACK,
+            Self::UNSUBSCRIBE => UNSUBSCRIBE,
+            Self::UNSUBACK => UNSUBACK,
+            Self::PINGREQ => PINGREQ,
+            Self::PINGRESP => PINGRESP,
+            Self::DISCONNECT => DISCONNECT,
         }
     }
 }
@@ -297,24 +316,24 @@ impl TryFrom<u8> for PacketType {
         // we only want to match on the left four bits.
 
         let out = match value & PACKET_TYPE_BITS {
-            0x10 => Self::CONNECT,
-            0x20 => Self::CONNACK,
-            0x30 => Self::PUBLISH,
-            0x40 => Self::PUBACK,
-            0x50 => Self::PUBREC,
-            0x60 => Self::PUBREL,
-            0x70 => Self::PUBCOMP,
-            0x80 => Self::SUBSCRIBE,
-            0x90 => Self::SUBACK,
-            0xA0 => Self::UNSUBSCRIBE,
-            0xB0 => Self::UNSUBACK,
-            0xC0 => Self::PINGREQ,
-            0xD0 => Self::PINGRESP,
-            0xE0 => Self::DISCONNECT,
+            CONNECT => Self::CONNECT,
+            CONNACK => Self::CONNACK,
+            PUBLISH => Self::PUBLISH,
+            PUBACK => Self::PUBACK,
+            PUBREC => Self::PUBREC,
+            PUBREL => Self::PUBREL,
+            PUBCOMP => Self::PUBCOMP,
+            SUBSCRIBE => Self::SUBSCRIBE,
+            SUBACK => Self::SUBACK,
+            UNSUBSCRIBE => Self::UNSUBSCRIBE,
+            UNSUBACK => Self::UNSUBACK,
+            PINGREQ => Self::PINGREQ,
+            PINGRESP => Self::PINGRESP,
+            DISCONNECT => Self::DISCONNECT,
             _ => {
                 return Err(DecodeError::new(
                     DecodeErrorKind::PacketType,
-                    format!("Packet type {} is not a valid packet.", value >> 4),
+                    format!("{} does not map to a valid packet type.", value >> 4),
                 ))
             }
         };
@@ -325,20 +344,20 @@ impl TryFrom<u8> for PacketType {
 impl Display for PacketType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::CONNECT => write!(f, "PacketType::CONNECT"),
-            Self::CONNACK => write!(f, "PacketType::CONNACK"),
-            Self::PUBLISH => write!(f, "PacketType::PUBLISH"),
-            Self::PUBACK => write!(f, "PacketType::PUBACK"),
-            Self::PUBREC => write!(f, "PacketType::PUBREQ"),
-            Self::PUBREL => write!(f, "PacketType::PUBREL"),
-            Self::PUBCOMP => write!(f, "PacketType::PUBCOMP"),
-            Self::SUBSCRIBE => write!(f, "PacketType::SUBSCRIBE"),
-            Self::SUBACK => write!(f, "PacketType::SUBACK"),
-            Self::UNSUBSCRIBE => write!(f, "PacketType::UNSUBSCRIBE"),
-            Self::UNSUBACK => write!(f, "PacketType::UNSUBACK"),
-            Self::PINGREQ => write!(f, "PacketType::PINGREQ"),
-            Self::PINGRESP => write!(f, "PacketType::PINGRESP"),
-            Self::DISCONNECT => write!(f, "PacketType::DISCONNECT"),
+            Self::CONNECT => write!(f, "CONNECT"),
+            Self::CONNACK => write!(f, "CONNACK"),
+            Self::PUBLISH => write!(f, "PUBLISH"),
+            Self::PUBACK => write!(f, "PUBACK"),
+            Self::PUBREC => write!(f, "PUBREQ"),
+            Self::PUBREL => write!(f, "PUBREL"),
+            Self::PUBCOMP => write!(f, "PUBCOMP"),
+            Self::SUBSCRIBE => write!(f, "SUBSCRIBE"),
+            Self::SUBACK => write!(f, "SUBACK"),
+            Self::UNSUBSCRIBE => write!(f, "UNSUBSCRIBE"),
+            Self::UNSUBACK => write!(f, "UNSUBACK"),
+            Self::PINGREQ => write!(f, "PINGREQ"),
+            Self::PINGRESP => write!(f, "PINGRESP"),
+            Self::DISCONNECT => write!(f, "DISCONNECT"),
         }
     }
 }
