@@ -1,4 +1,4 @@
 [workspace]
-members = ["mqtt-client", "mqtt-broker", "mqtt-core", "rdme-cli", "mqtt-client/pymqtt" ]
+members = ["mqtt-client", "mqtt-broker", "mqtt-core", "rdme-cli" ]
 
 resolver = "2"
