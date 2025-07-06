@@ -1,4 +1,5 @@
 use bytes::{Buf, Bytes};
+use tokio::io::{AsyncBufRead, AsyncBufReadExt};
 
 mod connack;
 mod connect;
@@ -31,6 +32,7 @@ pub use subscribe::SubscribePacket;
 pub use unsuback::UnsubAckPacket;
 pub use unsubscribe::UnsubscribePacket;
 
+use crate::err;
 use crate::{
     err::{DecodeError, DecodeErrorKind, EncodeError},
     io::MAX_ENCODED_PACKET_LEN,
@@ -41,11 +43,47 @@ use super::{Decode, Encode};
 const PACKET_TYPE_BITS: u8 = 0b1111_0000;
 const PACKET_FLAG_BITS: u8 = 0b0000_1111;
 
-pub fn decode_mqtt_packet(
-    f_header: FixedHeader,
-    buf: &mut Bytes,
-) -> Result<MqttPacket, DecodeError> {
-    MqttPacket::decode(f_header, buf)
+pub async fn decode_mqtt_packet<S, E>(
+    stream: &mut S,
+) -> Result<Option<(FixedHeader, MqttPacket)>, E>
+where
+    S: AsyncBufRead + Unpin,
+    E: From<err::DecodeError>,
+{
+    // let mut pin_stream = Pin::new(stream);
+    // let mut pin_stream = Pin::new(stream);
+    let n: &[u8] = stream
+        .fill_buf()
+        .await
+        .map_err(|e| DecodeError::new(DecodeErrorKind::StreamRead, e.to_string()))?;
+
+    // if there are no bytes to read, return none and consume no bytes.
+    if n.len() == 0 {
+        return Ok(None);
+    }
+
+    let mut bytes = Bytes::from(n.to_owned());
+
+    let f_header = decode_header(&mut bytes).await?;
+    // if the stream is still waiting for more bytes, return none and consume no bytes.
+    if bytes.remaining() < f_header.rest_len() {
+        return Ok(None);
+    }
+
+    let _ = bytes.split_off(f_header.rest_len());
+
+    match MqttPacket::decode(f_header, &mut bytes) {
+        Ok(packet) => {
+            return Ok(Some((f_header, packet)));
+        }
+        Err(err) => {
+            return Err(err.into());
+        }
+    }
+}
+
+pub async fn decode_header(bytes: &mut Bytes) -> Result<FixedHeader, DecodeError> {
+    return FixedHeader::decode(bytes);
 }
 
 #[derive(PartialEq, Debug, Clone)]
@@ -192,10 +230,6 @@ impl FixedHeader {
 
     pub(crate) fn rest_len(&self) -> usize {
         return self.rest_len;
-    }
-
-    pub fn len(&self) -> usize {
-        return self.header_len() + self.rest_len();
     }
 }
 

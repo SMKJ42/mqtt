@@ -378,7 +378,9 @@ async fn handle_first_packet<S: AsyncWrite + AsyncReadExt + Unpin>(
     ip_addr: Option<IpAddr>,
 ) -> Result<Option<ActiveSession>, ServerError> {
     loop {
-        match read_packet_with_timeout::<_, ServerError>(&mut BufReader::new(&mut *stream)).await {
+        match read_packet_with_timeout::<_, ServerError>(&mut BufReader::new(&mut *stream), 100)
+            .await
+        {
             Ok(packet_opt) => {
                 if let Some(packet) = packet_opt {
                     match packet {
@@ -422,7 +424,8 @@ async fn handle_session<S: AsyncRead + AsyncWrite + Unpin>(
     loop {
         // read in all packets.
         while let Some(packet) =
-            read_packet_with_timeout::<_, ServerError>(&mut BufReader::new(&mut *stream)).await?
+            read_packet_with_timeout::<_, ServerError>(&mut BufReader::new(&mut *stream), 100)
+                .await?
         {
             if session.timed_out() {
                 // if session has timed out, exit the main event loop

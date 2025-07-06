@@ -39,7 +39,7 @@ where
         self.stream.write_all(&mut packet.encode().unwrap()).await?;
         self.stream.flush().await?;
         loop {
-            if let Some(packet) = read_packet_with_timeout::<_, ClientError>(&mut self.stream)
+            if let Some(packet) = read_packet_with_timeout::<_, ClientError>(&mut self.stream, 100)
                 .await
                 .unwrap()
             {
@@ -62,7 +62,7 @@ where
     }
 
     pub async fn recv_packet(&mut self) -> Result<Option<MqttPacket>, ClientError> {
-        return read_packet_with_timeout(&mut self.stream).await;
+        return read_packet_with_timeout(&mut self.stream, 100).await;
     }
 
     pub async fn ping(&mut self) -> Result<(), ClientError> {

@@ -1,6 +1,17 @@
+use tokio::time::Duration;
+
 use bytes::{Buf, BufMut, Bytes, BytesMut};
+use futures::FutureExt;
+use tokio::{
+    io::{self, AsyncBufRead, AsyncBufReadExt},
+    time::sleep,
+};
 
 use crate::err::{DecodeError, DecodeErrorKind, EncodeError, EncodeErrorKind};
+use crate::{
+    err,
+    v4::{decode_mqtt_packet, FixedHeader, MqttPacket},
+};
 
 /*
  * MQTT v3.1.1 standard, Remaining length field on the fixed header can be at
@@ -162,77 +173,34 @@ mod header_length {
     }
 }
 
-use futures::FutureExt;
-use std::time::Duration;
-use tokio::{
-    io::{self, AsyncBufRead, AsyncBufReadExt},
-    time::sleep,
-};
-
-use crate::{
-    err,
-    v4::{decode_mqtt_packet, FixedHeader, MqttPacket},
-};
-
-pub async fn read_packet_with_timeout<
-    S: AsyncBufRead + Unpin,
-    E: From<io::Error> + From<err::DecodeError>,
->(
+pub async fn read_packet_with_timeout<S, E>(
     stream: &mut S,
-) -> Result<Option<MqttPacket>, E> {
-    // This is a little hackey, however it does allow us to escape the event loop without having a direct access to a poll function.
-    // Primarily useful for TLS stream types where the stream does not have a poll function.
-
+    timeout_us: u64,
+) -> Result<Option<MqttPacket>, E>
+where
+    S: AsyncBufRead + Unpin,
+    E: From<err::DecodeError>,
+{
     futures::select! {
-        _ = sleep(Duration::from_micros(100)).fuse() => {
+        _ = sleep(Duration::from_micros(timeout_us)).fuse() => {
             return Ok(None);
         }
-        res = cancel_safe(stream).fuse() => {
-            if let Ok(res) = &res {
-                let (_,  size) = res;
-                stream.consume(*size);
-            }
-            return res.map(|x| x.0);
+        packet = read_packet::<S, E>(stream).fuse() => {
+            return packet
         }
     }
 }
 
-pub async fn cancel_safe<S: AsyncBufRead + Unpin, E: From<err::DecodeError>>(
-    stream: &mut S,
-) -> Result<(Option<MqttPacket>, usize), E> {
-    // let mut pin_stream = Pin::new(stream);
-    // let mut pin_stream = Pin::new(stream);
-    let n = stream
-        .fill_buf()
-        .await
-        .map_err(|e| DecodeError::new(DecodeErrorKind::StreamRead, e.to_string()))?; // TODO: unwrap...
-
-    // if there are no bytes to read, return none and consume no bytes.
-    if n.len() == 0 {
-        return Ok((None, 0));
-    }
-
-    return decode_any(Bytes::from(n.to_owned())).await;
-}
-
-pub async fn decode_any<E: From<err::DecodeError>>(
-    mut bytes: Bytes,
-) -> Result<(Option<MqttPacket>, usize), E> {
-    let f_header = FixedHeader::decode(&mut bytes)?;
-
-    // if the stream is still waiting for more bytes, return none and consume no bytes.
-    if bytes.remaining() < f_header.rest_len() {
-        return Ok((None, 0));
-    }
-
-    let _ = bytes.split_off(f_header.rest_len());
-
-    match decode_mqtt_packet(f_header, &mut bytes) {
-        Ok(packet) => {
-            return Ok((Some(packet), f_header.rest_len() + f_header.header_len()));
-        }
-        Err(err) => {
-            return Err(err.into());
-        }
+pub async fn read_packet<S, E>(stream: &mut S) -> Result<Option<MqttPacket>, E>
+where
+    S: AsyncBufRead + Unpin,
+    E: From<err::DecodeError>,
+{
+    let packet_tuple = decode_mqtt_packet::<S, E>(stream).await?;
+    if let Some((f_header, packet)) = packet_tuple {
+        stream.consume(f_header.header_len() + f_header.rest_len());
+        return Ok(Some(packet));
+    } else {
+        return Ok(None);
     }
 }
