@@ -1,6 +1,5 @@
 use std::time::Duration;
 
-pub mod receiver;
 pub mod sender;
 
 // /// ## Important
