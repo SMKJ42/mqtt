@@ -32,9 +32,6 @@ use tokio::{
     sync::{Mutex, RwLock},
 };
 
-use rustls::pki_types::{pem::PemObject, CertificateDer, PrivateKeyDer};
-use tokio_rustls::TlsAcceptor;
-
 use mailbox::Mailbox;
 use session::{ActiveSession, AuthManager, DisconnectedSessions};
 use topic::{subscribe_to_topic_filter, ServerTopics};
@@ -71,11 +68,7 @@ impl MqttServer {
 
         log::info!("Server listening at: {}", addr);
 
-        if self.config.tls_enabled() {
-            self.start_tls(listener).await;
-        } else {
-            self.start_plaintext(listener).await;
-        }
+        self.start_plaintext(listener).await;
     }
 
     async fn start_plaintext(self, listener: TcpListener) {
@@ -103,73 +96,6 @@ impl MqttServer {
                 }
                 Err(err) => {
                     log::error!("Rejected TCP connection: {}", err);
-                }
-            }
-        }
-    }
-
-    async fn start_tls(self, listener: TcpListener) {
-        let server = Arc::new(self);
-
-        let certs = CertificateDer::pem_file_iter("tls/cert.pem")
-            .unwrap()
-            .collect::<Result<Vec<_>, _>>()
-            .unwrap();
-
-        if certs.len() == 0 {
-            log::warn!("No certificates were provided. Check the ./tls/cert.pem file")
-        }
-
-        let key = PrivateKeyDer::from_pem_file("tls/key.pem").unwrap();
-
-        let config = rustls::ServerConfig::builder()
-            .with_no_client_auth()
-            .with_single_cert(certs, key)
-            .unwrap();
-
-        let acceptor = TlsAcceptor::from(Arc::new(config));
-
-        log::info!(
-            "Initialized TLS on TCP listener at addr: {}",
-            server.config.addr()
-        );
-
-        loop {
-            let (stream, addr) = listener.accept().await.unwrap();
-            let ip_addr = stream
-                .peer_addr()
-                .map(|sock| Some(sock.ip()))
-                .unwrap_or(None);
-
-            let acceptor = acceptor.clone();
-
-            server.clean_expired_sessions().await;
-            match acceptor.accept(stream).await {
-                Ok(tls_stream) => {
-                    log::info!("New connection attempt from: {addr}");
-
-                    let server_clone = Arc::clone(&server);
-
-                    let mut tls_stream = BufReader::new(tls_stream);
-
-                    tokio::spawn(async move {
-                        if let Err(err) =
-                            handle_client(&server_clone, &mut tls_stream, ip_addr).await
-                        {
-                            log::error!("Error handling client: {err}");
-                            log::warn!("Closing connection: {addr}")
-                        } else {
-                            if let Err(_) = tls_stream.shutdown().await {
-                                log::error!("Did not gracefully close connection: {addr}")
-                            } else {
-                                log::info!("Gracefully closing connection: {addr}")
-                            }
-                        }
-                    });
-                }
-                Err(err) => {
-                    log::error!("{}", err);
-                    log::warn!("Rejected TCP connection")
                 }
             }
         }

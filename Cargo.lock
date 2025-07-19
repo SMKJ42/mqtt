@@ -706,12 +706,10 @@ dependencies = [
  "r2d2",
  "r2d2_sqlite",
  "rusqlite",
- "rustls",
  "serde",
  "sheesh",
  "time",
  "tokio",
- "tokio-rustls",
  "toml",
 ]
 
