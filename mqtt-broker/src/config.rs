@@ -19,20 +19,12 @@ impl MqttConfig {
         return self.connection.ip.to_string() + ":" + &self.connection.port.to_string();
     }
 
-    pub fn tls_enabled(&self) -> bool {
-        return self.connection.tls;
-    }
-
     pub fn should_log_file(&self) -> bool {
         return self.logger.file;
     }
 
     pub fn should_log_console(&self) -> bool {
         return self.logger.console;
-    }
-
-    pub fn require_auth(&self) -> bool {
-        return self.users.authenticate;
     }
 
     pub fn max_queued_messages(&self) -> usize {
@@ -75,17 +67,14 @@ impl TryFrom<&Path> for MqttConfig {
         let config: MqttConfig = toml::from_str(&buf)?;
 
         // warn for invalid port configurations.
-        if config.connection.tls {
-            if config.connection.port == 1883 {
-                log::warn!("Creating TLS connection on port 1883. This port is reserved for Plaintext MQTT connections.");
-            }
-        } else if config.connection.port == 8883 {
+        if config.connection.tls && config.connection.port == 1883 {
+            log::warn!("Creating TLS connection on port 1883. This port is reserved for Plaintext MQTT connections.");
+        } else if config.connection.tls == false && config.connection.port == 8883 {
             log::warn!("Creating Plaintext connection on port 8883. This port is reserved for TLS MQTT connections.");
         }
 
-        // warn for sending plaintext credentials.
         if config.users.authenticate && config.connection.tls == false {
-            log::warn!("Requiring client to send credentials in the clear. Please change the configuration if this is not intended.")
+            log::warn!("Requiring client to send plaintext credentials. Please change the configuration if this is not intended.")
         }
 
         return Ok(config);
