@@ -1,9 +1,6 @@
 use std::{
     fs::{self, File},
     path::Path,
-    process::Command,
-    thread::sleep,
-    time::Duration,
 };
 
 use crate::{config::MqttConfig, logger::BrokerLogger};
@@ -23,8 +20,6 @@ impl MqttEnv {
             }
         } else {
         }
-
-        init_tls_creds();
 
         return self;
     }
@@ -51,76 +46,6 @@ impl MqttEnv {
     pub fn config(self) -> MqttConfig {
         return self.config;
     }
-}
-
-pub fn init_tls_creds() {
-    if !fs::exists("tls").unwrap() {
-        fs::create_dir("tls").expect("Failed to create tls directory");
-        init_rsa_key();
-        init_tls_cert();
-    }
-}
-
-pub fn init_rsa_key() {
-    let pk = Command::new("openssl")
-        .args([
-            "genpkey",
-            "-algorithm",
-            "RSA",
-            "-out",
-            "tls/key.pem",
-            "-pkeyopt",
-            "rsa_keygen_bits:2048",
-        ])
-        .output();
-
-    while !fs::exists("tls/key.pem").expect("Error opening certificate file") {
-        sleep(Duration::from_millis(1));
-    }
-
-    if let Err(err) = pk {
-        log::error!("Could not create RSA private key: {err}");
-        panic!();
-    } else if let Ok(pk_out) = pk {
-        if !pk_out.status.success() {
-            let stderr = String::from_utf8_lossy(&pk_out.stderr);
-            log::error!("OpenSSL certificate generation failed: {stderr}");
-            panic!();
-        }
-    }
-}
-
-pub fn init_tls_cert() {
-    log::info!("Created RSA private key.");
-
-    let cert = Command::new("openssl")
-        .args([
-            "req",
-            "-new",
-            "-x509",
-            "-key",
-            "tls/key.pem",
-            "-out",
-            "tls/cert.pem",
-            "-days",
-            "365",
-            "-config",
-            "openssl.cnf",
-        ])
-        .output();
-
-    if let Err(err) = cert {
-        log::error!("Could not create TLS certificate: {err}");
-        panic!();
-    } else if let Ok(cert_out) = cert {
-        if !cert_out.status.success() {
-            let stderr = String::from_utf8_lossy(&cert_out.stderr);
-            log::error!("OpenSSL certificate generation failed: {stderr}");
-            panic!();
-        }
-    }
-
-    log::info!("Created TLS certificate.");
 }
 
 const FILE_CREATE_ERR: &'static str = "Could not create file: ";

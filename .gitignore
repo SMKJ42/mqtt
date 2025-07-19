@@ -8,3 +8,4 @@ mqtt-broker/logs
 *.json
 config.toml
 *.db
+logs

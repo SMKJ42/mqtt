@@ -24,7 +24,6 @@ use mqtt_core::{
     ConnectReturnCode, Encode,
 };
 
-use sheesh::session::Session;
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader},
     join,
@@ -33,7 +32,7 @@ use tokio::{
 };
 
 use mailbox::Mailbox;
-use session::{ActiveSession, AuthManager, DisconnectedSessions};
+use session::{ActiveSession, DisconnectedSessions};
 use topic::{subscribe_to_topic_filter, ServerTopics};
 
 struct MqttServer {
@@ -44,14 +43,12 @@ struct MqttServer {
     // Mutex is only locked when a client disconnects or connects.
     // Should this be a tokio mutex or a std mutex? Contention will probably be higher than topics though...
     dc_sessions: Arc<Mutex<DisconnectedSessions>>,
-    auth_manager: AuthManager,
 }
 
 impl MqttServer {
     /// Creates a new MqttServer instance holding a mutex to topics and a mutex to disconnected sessions.
     pub fn new(config: MqttConfig) -> Self {
         MqttServer {
-            auth_manager: AuthManager::new(config.user_db_connection()),
             topics: Arc::new(RwLock::new(ServerTopics::new(
                 config.max_queued_messages(),
                 config.default_qos(),
@@ -236,18 +233,13 @@ async fn handle_connect_packet<S: AsyncWriteExt + AsyncReadExt + Unpin>(
 
     // A little awkward of a join, but hey... it works... right?
     let sessions_fut = server.dc_sessions.lock();
-    let (mut sessions, user) = if server.config.require_auth() {
-        let handle = join!(sessions_fut, authenticate_user(server, &packet, ip_addr));
-        (handle.0, Some(handle.1?))
-    } else {
-        (sessions_fut.await, None)
-    };
+    let mut sessions = sessions_fut.await;
 
     // Check if the server has a session history.
     if let Some(dc_session) = sessions.remove_session(packet.client_id()) {
         if packet.clean_session() {
             // The client requested a new session, drop the old session history and continue.
-            session = ActiveSession::new_tcp(packet, user);
+            session = ActiveSession::new_tcp(packet);
         } else {
             // The client requested to resume from a client's prior history.
             connack.set_session_present(true);
@@ -255,33 +247,12 @@ async fn handle_connect_packet<S: AsyncWriteExt + AsyncReadExt + Unpin>(
         }
     } else {
         // The server does not have any session history.
-        session = ActiveSession::new_tcp(packet, user);
+        session = ActiveSession::new_tcp(packet);
     }
 
     stream.write_all(&connack.encode()).await?;
 
     return Ok(session);
-}
-
-async fn authenticate_user(
-    server: &Arc<MqttServer>,
-    packet: &ConnectPacket,
-    ip_addr: Option<IpAddr>,
-) -> Result<Session, ServerError> {
-    match (packet.username(), packet.password()) {
-        (Some(username), Some(password)) => {
-            let password = str::from_utf8(&password).unwrap();
-            return server
-                .auth_manager
-                .verify_credentials(username, password, ip_addr);
-        }
-        _ => {
-            return Err(ServerError::new(
-                server::ErrorKind::ConnectError(ConnectReturnCode::BadUsernameOrPassword),
-                String::from("Client attempted to connect without provided a username or password"),
-            ))
-        }
-    }
 }
 
 /// Reads the initial packet sent from the client

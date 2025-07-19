@@ -43,10 +43,6 @@ impl MqttConfig {
         return self.broker.default_qos;
     }
 
-    pub fn user_db_connection(&self) -> &str {
-        return &self.connection.db_connection;
-    }
-
     pub fn log_level(&self) -> LevelFilter {
         return LevelFilter::from_str(&self.logger.level).expect(&format!(
             "Invalid log level provided: {}. Accepted levels are: Off, Error, Warn, Info, Debug",
@@ -101,7 +97,6 @@ struct Connection {
     tls: bool,
     ip: Ipv4Addr,
     port: u16,
-    db_connection: String,
 }
 
 impl Default for Connection {
@@ -110,7 +105,6 @@ impl Default for Connection {
             tls: false,
             ip: Ipv4Addr::new(127, 0, 0, 1),
             port: 1883,
-            db_connection: String::from("user.db"),
         };
     }
 }

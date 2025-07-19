@@ -14,11 +14,6 @@ use mqtt_core::{ConnectReturnCode, Encode, MqttVersion};
 use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
 
-use sheesh::harness::sqlite::user::SqliteHarnessUser;
-use sheesh::harness::stateless::{init_stateless_sqlite_config, StatelessSessionManager};
-use sheesh::id::DefaultIdGenerator;
-use sheesh::session::Session as AuthSession;
-
 use std::net::IpAddr;
 use std::{collections::HashMap, sync::Arc, time::Instant};
 
@@ -30,7 +25,6 @@ pub type ExactlyOnceListType = ExactlyOnceList<Arc<PublishPacket>, Instant, Retr
 #[derive(Debug, Clone)]
 pub struct ActiveSession {
     client_id: String,
-    auth_session: Option<AuthSession>,
     conn_t: ConnectionType,
     protocol: Protocol,
     will: Option<Will>,
@@ -43,10 +37,9 @@ pub struct ActiveSession {
 }
 
 impl ActiveSession {
-    pub fn new_tcp(packet: ConnectPacket, auth_session: Option<AuthSession>) -> Self {
+    pub fn new_tcp(packet: ConnectPacket) -> Self {
         return Self {
             client_id: packet.client_id().to_string(),
-            auth_session,
             conn_t: ConnectionType::Tcp,
             protocol: Protocol::Mqtt(packet.version()),
             will: packet.will,
@@ -197,7 +190,6 @@ impl TryFrom<(DisconnectedSession, ConnectPacket)> for ActiveSession {
 
         return Ok(Self {
             client_id: packet.client_id.to_owned(),
-            auth_session: dc_session.auth_session,
             protocol: dc_session.protocol,
             conn_t: dc_session.conn_t,
             will: packet.will.to_owned(),
@@ -215,7 +207,6 @@ impl From<ActiveSession> for DisconnectedSession {
     fn from(value: ActiveSession) -> Self {
         Self {
             client_id: value.client_id,
-            auth_session: value.auth_session,
             conn_t: value.conn_t,
             protocol: value.protocol,
             keep_alive: value.keep_alive,
@@ -232,7 +223,6 @@ impl From<ActiveSession> for DisconnectedSession {
 #[derive(Clone)]
 pub struct DisconnectedSession {
     client_id: String,
-    auth_session: Option<AuthSession>,
     protocol: Protocol,
     conn_t: ConnectionType,
     keep_alive: u64,
@@ -324,52 +314,4 @@ pub enum ConnectionType {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Protocol {
     Mqtt(MqttVersion),
-}
-
-/*
- *
- *  ---------- USER AUTHENTICATION ----------
- *
- */
-
-use sheesh::user::UserManager;
-
-pub struct AuthManager {
-    user_manager: UserManager<DefaultIdGenerator, SqliteHarnessUser>,
-    session_manager: StatelessSessionManager,
-}
-
-impl AuthManager {
-    pub fn new(path: &str) -> Self {
-        let pool = Pool::new(SqliteConnectionManager::file(path)).unwrap();
-        let (user_manager, session_manager) = init_stateless_sqlite_config(pool);
-
-        return Self {
-            user_manager,
-            session_manager,
-        };
-    }
-
-    pub fn verify_credentials(
-        &self,
-        username: &str,
-        pwd: &str,
-        ip_addr: Option<IpAddr>,
-    ) -> Result<AuthSession, ServerError> {
-        // "user.login" may seem unintuitive, but the authmanager is utilizing StatelessSession, and therefore we do not need to hold on to a session token.
-        // We are only authenticating the username / password and holding the connection.
-        // If the client disconnects, they will have to provide their username and password in the connect packet.
-        match self
-            .user_manager
-            .login(&self.session_manager, username, pwd, ip_addr)
-        {
-            Ok((user, _, _)) => return Ok(user),
-            Err(_) => {
-                return Err(ServerError::new(
-                    server::ErrorKind::ConnectError(ConnectReturnCode::BadUsernameOrPassword),
-                    String::from("Client attempted to connect with invalid credentials"),
-                ));
-            }
-        }
-    }
 }
