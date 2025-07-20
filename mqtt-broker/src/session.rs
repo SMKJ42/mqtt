@@ -11,10 +11,6 @@ use mqtt_core::v4::{
 };
 use mqtt_core::{ConnectReturnCode, Encode, MqttVersion};
 
-use r2d2::Pool;
-use r2d2_sqlite::SqliteConnectionManager;
-
-use std::net::IpAddr;
 use std::{collections::HashMap, sync::Arc, time::Instant};
 
 use tokio::io::{AsyncWrite, AsyncWriteExt};
