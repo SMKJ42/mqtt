@@ -1,6 +1,6 @@
 use core::net::Ipv4Addr;
 
-use std::{fs::File, io::Read, path::Path, str::FromStr};
+use std::{fs::File, io::Read, net::IpAddr, path::Path, str::FromStr};
 
 use log::LevelFilter;
 use mqtt_core::qos::QosLevel;
@@ -66,7 +66,7 @@ impl TryFrom<&Path> for MqttConfig {
                     value.to_str().unwrap_or("")
                 );
                 log::error!("{err}");
-                panic!();
+                return Ok(MqttConfig::default());
             }
         };
 
@@ -98,64 +98,106 @@ impl TryFrom<&Path> for MqttConfig {
 
 #[derive(Deserialize, Serialize)]
 struct Connection {
+    #[serde(default = "default_false")]
     tls: bool,
-    ip: Ipv4Addr,
+    #[serde(default = "default_ip")]
+    ip: IpAddr,
+    #[serde(default = "default_port")]
     port: u16,
+    #[serde(default = "default_db_conn")]
     db_connection: String,
 }
 
 impl Default for Connection {
     fn default() -> Self {
         return Self {
-            tls: false,
-            ip: Ipv4Addr::new(127, 0, 0, 1),
-            port: 1883,
-            db_connection: String::from("user.db"),
+            tls: default_false(),
+            ip: default_ip(),
+            port: default_port(),
+            db_connection: default_db_conn(),
         };
     }
 }
 
 #[derive(Deserialize, Serialize)]
 pub struct Users {
+    #[serde(default = "default_false")]
     authenticate: bool,
 }
 
 impl Default for Users {
     fn default() -> Self {
         return Self {
-            authenticate: false,
+            authenticate: default_false(),
         };
     }
 }
 
 #[derive(Deserialize, Serialize)]
 pub struct Logger {
+    #[serde(default = "default_true")]
     console: bool,
+    #[serde(default = "default_true")]
     file: bool,
+    #[serde(default = "default_log_level")]
     level: String,
 }
 
 impl Default for Logger {
     fn default() -> Self {
         return Self {
-            console: true,
-            file: true,
-            level: String::from("trace"),
+            console: default_true(),
+            file: default_true(),
+            level: default_log_level(),
         };
     }
 }
 
 #[derive(Deserialize, Serialize)]
 pub struct Broker {
+    #[serde(default = "default_queue_size")]
     max_queued_messages: usize,
+    #[serde(default = "default_qos")]
     default_qos: QosLevel,
 }
 
 impl Default for Broker {
     fn default() -> Self {
         return Self {
-            max_queued_messages: 128,
-            default_qos: QosLevel::ExactlyOnce,
+            max_queued_messages: default_queue_size(),
+            default_qos: default_qos(),
         };
     }
+}
+
+fn default_false() -> bool {
+    return false;
+}
+
+fn default_true() -> bool {
+    return true;
+}
+
+fn default_ip() -> IpAddr {
+    return IpAddr::from(Ipv4Addr::new(0, 0, 0, 0));
+}
+
+fn default_port() -> u16 {
+    return 1883;
+}
+
+fn default_db_conn() -> String {
+    return "user.db".to_string();
+}
+
+fn default_log_level() -> String {
+    String::from("trace")
+}
+
+fn default_queue_size() -> usize {
+    return 128;
+}
+
+fn default_qos() -> QosLevel {
+    return QosLevel::ExactlyOnce;
 }

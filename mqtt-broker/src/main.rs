@@ -5,8 +5,9 @@ mod mailbox;
 mod session;
 mod topic;
 
+use core::net::SocketAddr;
 use core::str;
-use std::{net::IpAddr, path::PathBuf, sync::Arc};
+use std::{path::PathBuf, sync::Arc};
 
 use bytes::Bytes;
 use config::MqttConfig;
@@ -39,6 +40,10 @@ use mailbox::Mailbox;
 use session::{ActiveSession, AuthManager, DisconnectedSessions};
 use topic::{subscribe_to_topic_filter, ServerTopics};
 
+const MAX_LINGER: u64 = 100;
+
+const CERT_FILE_PATH: &'static str = "/etc/ssl/certs/cert.pem";
+const KEY_FILE_PATH: &'static str = "/etc/ssl/private/key.pem";
 struct MqttServer {
     config: MqttConfig,
     // Mutex is only locked when first obtaining a broadcast receiver handle, or when a topic is added or removed.
@@ -66,9 +71,7 @@ impl MqttServer {
 
     pub async fn start(self) {
         let addr = self.config.addr();
-
         let listener = TcpListener::bind(&addr).await.unwrap();
-
         log::info!("Server listening at: {}", addr);
 
         if self.config.tls_enabled() {
@@ -83,26 +86,12 @@ impl MqttServer {
         loop {
             server.clean_expired_sessions().await;
             match listener.accept().await {
-                Ok((mut stream, addr)) => {
-                    let ip_addr = stream
-                        .peer_addr()
-                        .map(|sock| Some(sock.ip()))
-                        .unwrap_or(None);
-
+                Ok((stream, addr)) => {
                     log::info!("New connection attempt - {addr}");
-
-                    let server_clone = Arc::clone(&server);
-
-                    tokio::spawn(async move {
-                        if let Err(err) = handle_client(&server_clone, &mut stream, ip_addr).await {
-                            log::warn!("Error handling client: {err} - {addr}")
-                        } else {
-                            log::info!("Gracefully closing connection - {addr}")
-                        }
-                    });
+                    server.spawn_client(stream, addr).await
                 }
                 Err(err) => {
-                    log::error!("Rejected TCP connection: {}", err);
+                    log::error!("{}", err);
                 }
             }
         }
@@ -111,21 +100,21 @@ impl MqttServer {
     async fn start_tls(self, listener: TcpListener) {
         let server = Arc::new(self);
 
-        let certs = CertificateDer::pem_file_iter("tls/cert.pem")
+        let certs = CertificateDer::pem_file_iter(CERT_FILE_PATH)
             .unwrap()
             .collect::<Result<Vec<_>, _>>()
             .unwrap();
 
         if certs.len() == 0 {
-            log::warn!("No certificates were provided. Check the ./tls/cert.pem file")
+            log::warn!("No certificates were provided at {CERT_FILE_PATH}")
         }
 
-        let key = PrivateKeyDer::from_pem_file("tls/key.pem").unwrap();
+        let key = PrivateKeyDer::from_pem_file(KEY_FILE_PATH).unwrap();
 
         let config = rustls::ServerConfig::builder()
             .with_no_client_auth()
             .with_single_cert(certs, key)
-            .unwrap();
+            .expect(&format!("No key was provided at {KEY_FILE_PATH}"));
 
         let acceptor = TlsAcceptor::from(Arc::new(config));
 
@@ -136,10 +125,6 @@ impl MqttServer {
 
         loop {
             let (stream, addr) = listener.accept().await.unwrap();
-            let ip_addr = stream
-                .peer_addr()
-                .map(|sock| Some(sock.ip()))
-                .unwrap_or(None);
 
             let acceptor = acceptor.clone();
 
@@ -147,32 +132,32 @@ impl MqttServer {
             match acceptor.accept(stream).await {
                 Ok(tls_stream) => {
                     log::info!("New connection attempt from: {addr}");
+                    let tls_stream = BufReader::new(tls_stream);
 
-                    let server_clone = Arc::clone(&server);
-
-                    let mut tls_stream = BufReader::new(tls_stream);
-
-                    tokio::spawn(async move {
-                        if let Err(err) =
-                            handle_client(&server_clone, &mut tls_stream, ip_addr).await
-                        {
-                            log::error!("Error handling client: {err}");
-                            log::warn!("Closing connection: {addr}")
-                        } else {
-                            if let Err(_) = tls_stream.shutdown().await {
-                                log::error!("Did not gracefully close connection: {addr}")
-                            } else {
-                                log::info!("Gracefully closing connection: {addr}")
-                            }
-                        }
-                    });
+                    server.spawn_client(tls_stream, addr).await
                 }
                 Err(err) => {
                     log::error!("{}", err);
-                    log::warn!("Rejected TCP connection")
                 }
             }
         }
+    }
+
+    async fn spawn_client<S>(self: &Arc<Self>, mut stream: S, addr: SocketAddr)
+    where
+        S: AsyncReadExt + AsyncWrite + Unpin + Send + 'static,
+    {
+        let server = self.clone();
+        tokio::spawn(async move {
+            if let Err(err) = handle_client(&server, &mut stream, addr).await {
+                log::error!(
+                    "Error handling client, closing connection: {:?} - {err}",
+                    addr
+                );
+            } else {
+                log::info!("Gracefully closing connection: {:?}", addr)
+            }
+        });
     }
 
     /// Sends  to the broadcast channel for the given TopicName.
@@ -268,11 +253,9 @@ impl MqttServer {
 async fn handle_client<S: AsyncReadExt + AsyncWrite + Unpin>(
     server: &Arc<MqttServer>,
     stream: &mut S,
-    ip_addr: Option<IpAddr>,
+    addr: SocketAddr,
 ) -> Result<(), ServerError> {
-    let active_session = handle_first_packet(&server, stream, ip_addr).await?;
-
-    log::info!("connected");
+    let active_session = handle_first_packet(&server, stream, addr).await?;
 
     if let Some(mut session) = active_session {
         match handle_session(&server, stream, &mut session).await {
@@ -302,7 +285,7 @@ async fn handle_connect_packet<S: AsyncWriteExt + AsyncReadExt + Unpin>(
     server: &Arc<MqttServer>,
     packet: ConnectPacket,
     stream: &mut S,
-    ip_addr: Option<IpAddr>,
+    addr: SocketAddr,
 ) -> Result<ActiveSession, ServerError> {
     let mut connack = ConnAckPacket::new(false, ConnectReturnCode::Accept);
 
@@ -311,7 +294,7 @@ async fn handle_connect_packet<S: AsyncWriteExt + AsyncReadExt + Unpin>(
     // A little awkward of a join, but hey... it works... right?
     let sessions_fut = server.dc_sessions.lock();
     let (mut sessions, user) = if server.config.require_auth() {
-        let handle = join!(sessions_fut, authenticate_user(server, &packet, ip_addr));
+        let handle = join!(sessions_fut, authenticate_user(server, &packet, addr));
         (handle.0, Some(handle.1?))
     } else {
         (sessions_fut.await, None)
@@ -340,14 +323,14 @@ async fn handle_connect_packet<S: AsyncWriteExt + AsyncReadExt + Unpin>(
 async fn authenticate_user(
     server: &Arc<MqttServer>,
     packet: &ConnectPacket,
-    ip_addr: Option<IpAddr>,
+    addr: SocketAddr,
 ) -> Result<Session, ServerError> {
     match (packet.username(), packet.password()) {
         (Some(username), Some(password)) => {
             let password = str::from_utf8(&password).unwrap();
             return server
                 .auth_manager
-                .verify_credentials(username, password, ip_addr);
+                .verify_credentials(username, password, addr);
         }
         _ => {
             return Err(ServerError::new(
@@ -375,11 +358,14 @@ async fn authenticate_user(
 async fn handle_first_packet<S: AsyncWrite + AsyncReadExt + Unpin>(
     server: &Arc<MqttServer>,
     stream: &mut S,
-    ip_addr: Option<IpAddr>,
+    addr: SocketAddr,
 ) -> Result<Option<ActiveSession>, ServerError> {
     loop {
-        match read_packet_with_timeout::<_, ServerError>(&mut BufReader::new(&mut *stream), 100)
-            .await
+        match read_packet_with_timeout::<_, ServerError>(
+            &mut BufReader::new(&mut *stream),
+            MAX_LINGER,
+        )
+        .await
         {
             Ok(packet_opt) => {
                 if let Some(packet) = packet_opt {
@@ -393,7 +379,7 @@ async fn handle_first_packet<S: AsyncWrite + AsyncReadExt + Unpin>(
 
                             MqttPacket::Connect(packet) => {
                                 // return Ok(Some( handle_connect().await));
-                                return handle_connect_packet(server, packet, stream, ip_addr).await.map(|x| Some(x));
+                                return handle_connect_packet(server, packet, stream, addr).await.map(|x| Some(x));
                             }
                             _ => {
                                 return Err(ServerError::new(
@@ -423,9 +409,11 @@ async fn handle_session<S: AsyncRead + AsyncWrite + Unpin>(
 
     loop {
         // read in all packets.
-        while let Some(packet) =
-            read_packet_with_timeout::<_, ServerError>(&mut BufReader::new(&mut *stream), 100)
-                .await?
+        while let Some(packet) = read_packet_with_timeout::<_, ServerError>(
+            &mut BufReader::new(&mut *stream),
+            MAX_LINGER,
+        )
+        .await?
         {
             if session.timed_out() {
                 // if session has timed out, exit the main event loop
@@ -636,6 +624,12 @@ async fn handle_packet<S: AsyncRead + AsyncWrite + Unpin>(
         }
     }
     return Ok(false);
+}
+
+#[derive(PartialEq)]
+enum Signal {
+    CONT,
+    STOP,
 }
 
 #[tokio::main]

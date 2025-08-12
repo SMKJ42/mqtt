@@ -19,7 +19,7 @@ use sheesh::harness::stateless::{init_stateless_sqlite_config, StatelessSessionM
 use sheesh::id::DefaultIdGenerator;
 use sheesh::session::Session as AuthSession;
 
-use std::net::IpAddr;
+use core::net::SocketAddr;
 use std::{collections::HashMap, sync::Arc, time::Instant};
 
 use tokio::io::{AsyncWrite, AsyncWriteExt};
@@ -354,14 +354,14 @@ impl AuthManager {
         &self,
         username: &str,
         pwd: &str,
-        ip_addr: Option<IpAddr>,
+        addr: SocketAddr,
     ) -> Result<AuthSession, ServerError> {
         // "user.login" may seem unintuitive, but the authmanager is utilizing StatelessSession, and therefore we do not need to hold on to a session token.
         // We are only authenticating the username / password and holding the connection.
         // If the client disconnects, they will have to provide their username and password in the connect packet.
         match self
             .user_manager
-            .login(&self.session_manager, username, pwd, ip_addr)
+            .login(&self.session_manager, username, pwd, Some(addr.ip()))
         {
             Ok((user, _, _)) => return Ok(user),
             Err(_) => {
