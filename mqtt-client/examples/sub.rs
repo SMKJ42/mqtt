@@ -9,7 +9,7 @@ use mqtt_core::{
     topic::{TopicFilter, TopicSubscription},
     v4::{ConnectPacket, MqttPacket, PublishPacket, SubscribePacket},
 };
-use tokio::net::{TcpSocket, TcpStream};
+use tokio::net::TcpStream;
 
 #[tokio::main]
 async fn main() {

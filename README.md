@@ -25,3 +25,11 @@ The primary goal of this repository is to provide a robust MQTT Broker / Client 
 ### Features:
 
 -   Event logging.
+
+### Docker
+
+```
+docker build -t "mqtt:dev" .
+```
+
+### Compiling

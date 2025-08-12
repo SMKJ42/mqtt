@@ -672,6 +672,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "mqtt-broker"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "chrono",
+ "colored",
+ "futures",
+ "log",
+ "mqtt-core",
+ "r2d2",
+ "r2d2_sqlite",
+ "rusqlite",
+ "rustls",
+ "serde",
+ "sheesh",
+ "time",
+ "tokio",
+ "tokio-rustls",
+ "toml",
+]
+
+[[package]]
 name = "mqtt-client"
 version = "0.1.0"
 dependencies = [
@@ -691,28 +713,6 @@ dependencies = [
  "serde",
  "tokio",
  "tokio-rustls",
-]
-
-[[package]]
-name = "mqtt-server"
-version = "0.1.0"
-dependencies = [
- "bytes",
- "chrono",
- "colored",
- "futures",
- "log",
- "mqtt-core",
- "r2d2",
- "r2d2_sqlite",
- "rusqlite",
- "rustls",
- "serde",
- "sheesh",
- "time",
- "tokio",
- "tokio-rustls",
- "toml",
 ]
 
 [[package]]
